@@ -1,0 +1,83 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "make debug",
+            "type": "process",
+            "command": "make",
+            "args": [
+                "DEBUG=1"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "make release",
+            "type": "process",
+            "command": "make",
+            "args": [
+                "DEBUG=0"
+            ],
+            "problemMatcher": [],
+            "group": {
+                "kind": "build",
+                "isDefault": true
+            }
+        },
+        {
+            "label": "clean",
+            "type": "process",
+            "command": "make",
+            "args": [
+                "clean"
+            ],
+            "problemMatcher": []
+        },
+        {
+            "label": "run",
+            "type": "shell",
+            "isBackground": true,
+            "command": "C:/Users/kejran/AppData/Local/Citra/nightly-mingw/citra-qt.exe",
+            "args": [
+                "${workspaceFolder}/${workspaceFolderBasename}.3dsx"
+            ],
+            "dependsOn": ["make release"],
+            "presentation": {
+                "clear": true,
+                "reveal": "always"
+            },
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "problemMatcher": []
+        }//,
+        // {
+        //     "label": "gdb-debug",
+        //     "type": "shell",
+        //     "dependsOn": [
+        //         "make debug"
+        //     ],
+        //     "isBackground": false,
+        //     "command": "C:\\desmume\\DeSmuME_0.9.11_x86_dev+.exe",
+        //     "args": [
+        //         "--arm9gdb=20000",
+        //         "${workspaceFolder}/${workspaceFolderBasename}.nds"
+        //     ],
+        //     "presentation": {
+        //         "clear": true,
+        //         "reveal": "always"
+        //     },
+        //     "problemMatcher": []
+        // },
+        // {
+        //     "label": "stop-emulation",
+        //     "type": "shell",
+        //     "command": "taskkill",
+        //     "args": [
+        //         "/FI",
+        //         "imagename eq DeSmuME*"
+        //     ],
+        //     "problemMatcher": []
+        // }
+    ]
+}
