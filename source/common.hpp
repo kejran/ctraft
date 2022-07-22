@@ -31,7 +31,7 @@ struct s16vec3 {
 };
 
 static constexpr int chunkSize = 16;
-using chunk = std::array<uint8_t, chunkSize * chunkSize * chunkSize>;
+using chunk = std::array<std::array<std::array<uint16_t, chunkSize>, chunkSize>, chunkSize>;
 
 struct vertex { 
     u8vec3 position; 

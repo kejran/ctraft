@@ -45,29 +45,6 @@ struct ChunkMetadata {
 	bool meshed = false;
 };
 
-void initMeshVisuals(ChunkMetadata &meta) {
-	meta.allocation = meshChunk(*meta.data);
-	if (meta.allocation.vertexCount) {
-		BufInfo_Init(&meta.vertexBuffer);
-		BufInfo_Add(&meta.vertexBuffer, meta.allocation.vertices, sizeof(vertex), 3, 0x210);
-	}
-	meta.meshed = true;
-}
-
-static float angleX = 0.0, angleY = 0.0;
-
-// Helper function for loading a texture from memory
-static bool loadTextureFromMem(C3D_Tex* tex, C3D_TexCube* cube, const void* data, size_t size)
-{
-	Tex3DS_Texture t3x = Tex3DS_TextureImport(data, size, tex, cube, false);
-	if (!t3x)
-		return false;
-
-	// Delete the t3x object since we don't need it
-	Tex3DS_TextureFree(t3x);
-	return true;
-}
-
 using WorldMap = std::unordered_map<s16vec3, ChunkMetadata, s16vec3::hash>;
 
 WorldMap world;
@@ -82,11 +59,54 @@ ChunkMetadata &fillChunk(s16 cx, s16 cy, s16 cz) {
 			for (int lz = 0; lz < chunkSize; ++lz) {
 				int _x = x + lx; int _y = y + ly; int _z = z + lz;
 				u16 block = (Noise3_ImproveXY(0, _x*0.1, _y*0.1, _z*0.1)*4-_z+chunkSize/2) > 0 ? 2 : 0;// z > 5 ? 0 : z == 5 ? 2 : z > 2 ? 1 : 3; 
-				(*meta.data)[lx+ly*chunkSize+lz*chunkSize*chunkSize] = block;
+				(*meta.data)[lz][ly][lx] = block;
 		}
 
 	return meta;
 }
+
+// todo: this will be async/queued on a separate thread later
+ChunkMetadata &getOrInitChunk(s16 x, s16 y, s16 z) {
+	auto it = world.find({x, y, z}); // todo could optimise it
+	if (it != world.end())
+		return it->second;
+	else 
+		return fillChunk(x, y, z);
+}
+
+void initMeshVisuals(ChunkMetadata &meta, std::array<chunk *, 6> const &sides) {
+	meta.allocation = meshChunk(*meta.data, sides);
+	if (meta.allocation.vertexCount) {
+		BufInfo_Init(&meta.vertexBuffer);
+		BufInfo_Add(&meta.vertexBuffer, meta.allocation.vertices, sizeof(vertex), 3, 0x210);
+	}
+	meta.meshed = true;
+}
+
+void initMeshVisuals(int x, int y, int z) {
+	initMeshVisuals(getOrInitChunk(x, y, z), std::array<chunk *, 6> {
+		getOrInitChunk(x-1, y, z).data,
+		getOrInitChunk(x+1, y, z).data,
+		getOrInitChunk(x, y-1, z).data,
+		getOrInitChunk(x, y+1, z).data,
+		getOrInitChunk(x, y, z-1).data,
+		getOrInitChunk(x, y, z+1).data
+	});
+}
+
+static float angleX = 0.0, angleY = 0.0;
+
+// Helper function for loading a texture from memory
+static bool loadTextureFromMem(C3D_Tex* tex, C3D_TexCube* cube, const void* data, size_t size)
+{
+	Tex3DS_Texture t3x = Tex3DS_TextureImport(data, size, tex, cube, false);
+	if (!t3x)
+		return false;
+
+	// Delete the t3x object since we don't need it
+	Tex3DS_TextureFree(t3x);
+	return true;
+}	
 
 static void sceneInit(void)
 {
@@ -113,7 +133,7 @@ static void sceneInit(void)
 			
 	for (int x = -2; x <= 2; ++x)
 		for (int y = -2; y <= 2; ++y)
-			initMeshVisuals(fillChunk(x, y, 0));
+			initMeshVisuals(x, y, 0);
 
 	// Load the texture and bind it to the first texture unit
 

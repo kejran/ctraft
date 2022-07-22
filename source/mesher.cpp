@@ -81,13 +81,44 @@ inline int _inm(int dir, int position) {
 
 // todo handle allocation errors
 
-MesherAllocation meshChunk(chunk const &ch, std::array<chunk &const, 6> const &sides) {
+MesherAllocation meshChunk(chunk const &ch, std::array<chunk *, 6> const &sides) {
 	std::vector<vertex> vertices;
 	std::array<u16, (chunkSize+1) * (chunkSize+1)> vertexCache;
 	std::vector<u16> indicesFlat;
 	std::array<std::vector<u16>, textureCount> isPerTexture;
 	
 	// -x, +x, -y, +y, -z, +z
+	std::array<std::array<std::array<u16, chunkSize+2>, chunkSize+2>, chunkSize+2> cch;// = {0};
+	for (int z = 0; z < chunkSize; ++z)
+		for (int y = 0; y < chunkSize; ++y)
+			for (int x = 0; x < chunkSize; ++x)
+				cch[z + 1][y + 1][x + 1] = ch[z][y][x];  
+
+	// organise this somehow...
+	if (sides[0]) // -x
+		for (int z = 0; z < chunkSize; ++z)
+			for (int y = 0; y < chunkSize; ++y)
+				cch[z + 1][y + 1][0] = (*sides[0])[z][y][chunkSize-1];
+	if (sides[1]) // +x
+		for (int z = 0; z < chunkSize; ++z)
+			for (int y = 0; y < chunkSize; ++y)
+				cch[z + 1][y + 1][chunkSize+1] = (*sides[1])[z][y][0];
+	if (sides[2]) // -y
+		for (int z = 0; z < chunkSize; ++z)
+			for (int x = 0; x < chunkSize; ++x)
+				cch[z + 1][0][x + 1] = (*sides[2])[z][chunkSize-1][x];
+	if (sides[3]) // +y
+		for (int z = 0; z < chunkSize; ++z)
+			for (int x = 0; x < chunkSize; ++x)
+				cch[z + 1][chunkSize+1][x + 1] = (*sides[3])[z][0][x];
+	if (sides[4]) // -z
+		for (int y = 0; y < chunkSize; ++y)
+			for (int x = 0; x < chunkSize; ++x)
+				cch[0][y + 1][x + 1] = (*sides[4])[chunkSize-1][y][x];
+	if (sides[5]) // -z
+		for (int y = 0; y < chunkSize; ++y)
+			for (int x = 0; x < chunkSize; ++x)
+				cch[chunkSize+1][y + 1][x + 1] = (*sides[5])[0][y][x];
 
 	for (int s = 0; s < 6; ++s) { // side
 		
@@ -125,23 +156,15 @@ MesherAllocation meshChunk(chunk const &ch, std::array<chunk &const, 6> const &s
 					u8 y = ly + uy + vy;
 					u8 z = lz + uz + vz;
 					
-					u16 self = ch[x + y * chunkSize + z * chunkSize * chunkSize] & 0x3; // mod for now
+					u16 self = ch[z][y][x] & 0x3; // mod for now
 					bool draw = self > 0;
 					if (draw) {
 						s8 sx = x + normX;
 						s8 sy = y + normY;
 						s8 sz = z + normZ;
-						bool bound = (
-							sx >= 0 && sx < chunkSize && 
-							sy >= 0 && sy < chunkSize && 
-							sz >= 0 && sz < chunkSize);
-						if (bound) {
-							u16 other = ch[sx + sy * chunkSize + sz * chunkSize * chunkSize] & 0x3;
-							draw = other == 0;
-						} else 
-							draw = true;
+						u16 other = cch[sz+1][sy+1][sx+1] & 0x3;
+						draw = other == 0;
 					}
-
 					if (draw) {
 						for (int i = 0; i < 4; ++i) {
 							auto uv = basicCubeUVs[i]; 

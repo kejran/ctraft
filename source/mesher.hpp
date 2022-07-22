@@ -17,6 +17,6 @@ struct MesherAllocation {
     std::vector<Mesh> meshes;
 };
 
-MesherAllocation meshChunk(chunk const &ch, std::array<chunk &const, 6> const &sides);
+MesherAllocation meshChunk(chunk const &ch, std::array<chunk *, 6> const &sides);
 
 void freeMesh(MesherAllocation &);
