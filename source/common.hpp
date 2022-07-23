@@ -10,7 +10,7 @@
 
 template <typename T> struct vec2 { T x, y; };
 template <typename T> struct vec3 { 
-	T x, y, z; 
+	T x = 0, y = 0, z = 0; 
 	bool operator==(vec3<T> const &o) const = default;
 	struct hash {
 		size_t operator()(const vec3<T>& pos) const {
@@ -28,8 +28,11 @@ using s8vec3 = vec3<s8>;
 using fvec2 = vec2<float>;
 using fvec3 = vec3<float>;
 
-static constexpr int chunkSize = 16;
+static constexpr int chunkBits = 4;
+static constexpr int chunkSize = (1 << chunkBits);
 using chunk = std::array<std::array<std::array<u16, chunkSize>, chunkSize>, chunkSize>;
+
+static constexpr int chunkMask = chunkSize - 1;
 
 struct vertex { 
     u8vec3 position; 

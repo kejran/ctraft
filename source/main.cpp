@@ -14,6 +14,8 @@
 #include "grass_top_t3x.h"
 #include "stone_t3x.h"
 
+#include <cmath>
+
 #define CLEAR_COLOR 0x68B0D8FF
 
 #define DISPLAY_TRANSFER_FLAGS \
@@ -74,6 +76,23 @@ ChunkMetadata &getOrInitChunk(s16 x, s16 y, s16 z) {
 		return fillChunk(x, y, z);
 }
 
+ChunkMetadata *tryGetChunk(s16 x, s16 y, s16 z) {
+	auto it = world.find({x, y, z}); 
+	if (it != world.end())
+		return &it->second;
+	else 
+		return nullptr;
+}
+
+u16 tryGetBlock(int x, int y, int z) {
+	
+	auto *ch = tryGetChunk(x >> chunkBits, y >> chunkBits, z >> chunkBits);
+	if (ch != nullptr)
+		return (*ch->data)[z & chunkMask][y & chunkMask][x & chunkMask];
+	else
+		return 0xffff;
+}
+
 void initMeshVisuals(ChunkMetadata &meta, std::array<chunk *, 6> const &sides) {
 	meta.allocation = meshChunk(*meta.data, sides);
 	if (meta.allocation.vertexCount) {
@@ -108,14 +127,137 @@ static bool loadTextureFromMem(C3D_Tex* tex, C3D_TexCube* cube, const void* data
 	return true;
 }	
 
-float playerX = 0, playerY = 0, playerVelX = 0, playerVelY = 0;
+struct {
+	fvec3 pos;
+	fvec3 velocity;
+} player;
 
-fvec2 collide(fvec2 position, float radius) {
-	
+int lfloor(float v) {
+	return static_cast<int>(floorf(v));// gimme std floor to int damn it
 }
 
-fvec3 collide(fvec3 position, float radius, int height) {
+/*
+	3
+      --- // 2.4 -> 2 -> 0.1
+	2
+	
+	1
+      --- // 0.5 -> 0 -> 1
+	0
+*/
 
+float collideFloor(float z, int x, int y, float height, bool &cz) {
+	height -= 0.1f;
+	{
+		int t = lfloor(z + height);
+		if (tryGetBlock(x, y, t)) {
+			z = t - height;
+			cz = true;
+		}
+	}
+	{
+		int b = lfloor(z);
+		if (tryGetBlock(x, y, b)) {
+			z = b + 1;
+			cz = true;
+		}
+	}  
+	return z;
+}
+
+//	0	1	2	3
+//	|	|	|	|
+//  |   (*)	|	| // 1.2 -> 0.7 -> 0 
+// 	|	| (*)	| // 1.8 -> 2.3 -> 2
+
+fvec2 collide2d(fvec2 position, int z, float radius, bool &cx, bool &cy) {
+
+	cx = false; cy = false;
+	float dx = 0, dy = 0;
+	float absdx = 0, absdy = 0; 
+	// any distance closer than radius + half-block are a collision
+	float colDist = radius + 0.5f;
+
+	float tx = position.x;// + displacement.x;
+	float ty = position.y;// + displacement.y;
+	
+	int x = lfloor(tx);
+	int y = lfloor(ty);
+
+	int l = lfloor(tx - radius);
+	int r = lfloor(tx + radius);
+	int b = lfloor(ty - radius);
+	int f = lfloor(ty + radius);
+
+	for (int _y = b; _y <= f; ++_y)
+	 	for (int _x = l; _x <= r; ++_x) 
+			if (tryGetBlock(_x, _y, z)) {
+				// printf("gottem @ %i,%i\n", _x, _y);
+				// distances to centers of blocks
+				float distX = _x - tx + 0.5f; // vector from player to centre of block 
+				float distY = _y - ty + 0.5f;
+				float aDistX = fabsf(distX);
+				float aDistY = fabsf(distY);
+				if (aDistX < colDist && aDistX > absdx) {
+					dx = distX;
+					absdx = aDistX;
+					cx = true;
+				}	 
+				if (aDistY < colDist && aDistY > absdy) {
+					dy = distY;
+					absdy = aDistY;
+					cy = true;
+				}
+			}
+
+	if (dx > 0) dx -= 0.01f; else dx += 0.01f;
+	if (dy > 0) dy -= 0.01f; else dy += 0.01f;
+	
+	return {
+		position.x + ((cx && (!cy || (absdx > absdy))) ? ((dx > 0) ? (dx - radius - 0.5f) : (dx + radius + 0.5f)) : 0),
+		position.y + ((cy && (!cx || (absdy > absdx))) ? ((dy > 0) ? (dy - radius - 0.5f) : (dy + radius + 0.5f)) : 0)
+	};
+}
+
+// todo dynamic height?
+void moveAndCollide(fvec3 &position, fvec3 &velocity, float delta, float radius, int height) {
+	fvec3 displacement {
+		velocity.x * delta,
+		velocity.y * delta, 
+		velocity.z * delta
+	};
+
+//	float maxDisp = std::max(std::abs(displacement.x), std::max(std::abs(displacement.y), std::abs(displacement.z)));
+	// 0 -> 1; 0.8 -> 1; 1 -> 2
+//	int iterations = static_cast<int>(maxDisp + 1.1f);
+//	(void)iterations; // todo use
+
+	int baseZ = static_cast<int>(floorf(position.z + 0.01f));// gimme floor to int damn it
+	float above = position.z - baseZ;
+	if (above > 0.1f)
+		++height;
+	vec2 target { position.x + displacement.x, position.y + displacement.y };
+	bool cx = false, cy = false, cz = false;
+	for (int z = 0; z < height; ++z) {
+		bool lcx, lcy;
+		target = collide2d(target, z + baseZ, radius, lcx, lcy);
+		if (lcx || lcy)
+			target = collide2d(target, z + baseZ, radius, lcx, lcy);
+		cx |= lcx;
+		cy |= lcy;
+
+	}
+
+	float tz = collideFloor(position.z + displacement.z, lfloor(target.x), lfloor(target.y), height, cz);
+
+	if (cx)
+		velocity.x = 0;
+	if (cy)
+		velocity.y = 0;
+	if (cz)
+		velocity.z = 0;
+
+	position.x = target.x; position.y = target.y; position.z = tz;
 }
 
 static void sceneInit(void)
@@ -191,8 +333,8 @@ void handlePlayer(float delta) {
 
 	// movement
 
-	float walkSpeed = 5;
-	float walkAcc = 5;
+	float walkSpeed = (hidKeysDown() & KEY_B) ? 0.1f : 2;
+	float walkAcc = 50;
 
 	hidCircleRead(&cp);
 	float angleM = atan2f(cp.dx, cp.dy) + angleX;
@@ -205,14 +347,14 @@ void handlePlayer(float delta) {
 			mag2 = 140*140;
 		float mag = sqrtf(mag2);
 		mag -= 40;
-		float targetMag = delta * walkSpeed * mag / 100;
+		float targetMag = walkSpeed * mag / 100;
 		
 		targetX = sinf(angleM) * targetMag;
 		targetY = cosf(angleM) * targetMag;
 	} 
 
-	float vdx = targetX - playerVelX;
-	float vdy = targetY - playerVelY;
+	float vdx = targetX - player.velocity.x;
+	float vdy = targetY - player.velocity.y;
 	float maxDelta = walkAcc * delta;
 	float vmag2 = vdx*vdx+vdy*vdy;
 	if (maxDelta*maxDelta < vmag2) {
@@ -220,10 +362,23 @@ void handlePlayer(float delta) {
 		vdx *= imag;
 		vdy *= imag;
 	}
-	playerVelX += vdx;
-	playerVelY += vdy;
-	playerX += playerVelX;
-	playerY += playerVelY;
+	player.velocity.x += vdx;
+	player.velocity.y += vdy;
+
+	u32 kDown = hidKeysDown();
+
+	if ((kDown & KEY_A) && player.velocity.z < 0.1f)
+		// todo raycast down
+		player.velocity.z = 4.8f; // adjust until it feels ok
+	else
+		player.velocity.z -= 9.81f * delta;
+	
+	// velocity > 20 will break 1-iteration collision
+	if (player.velocity.z < -10) 
+		player.velocity.z = -10;
+	
+	moveAndCollide(player.pos, player.velocity, delta, 0.4f, 2);
+	
 }
 
 void sceneRender(float iod) {
@@ -237,7 +392,9 @@ void sceneRender(float iod) {
 	Mtx_RotateY(&modelView, angleX, true);
 
 	Mtx_RotateX(&modelView, -M_PI/2, true);
-	Mtx_Translate(&modelView, -playerX, -playerY, -10, true);
+
+	float eyeHeight = 1.5f;
+	Mtx_Translate(&modelView, -player.pos.x, -player.pos.y, -player.pos.z - eyeHeight, true);
 
 	Mtx_PerspStereoTilt(&projection, C3D_AngleFromDegrees(40.0f), C3D_AspectRatioTop, 0.1f, 100, iod, 2.0f, false);
 
@@ -290,8 +447,6 @@ void sceneExit(void)
 
 static constexpr float invTickRate = 1.0f / SYSCLOCK_ARM11;
 
-
-
 int main()
 {
 	initSimplex();
@@ -313,6 +468,8 @@ int main()
 	sceneInit();
 
 	u64 tick = svcGetSystemTick(); 
+	
+	player.pos.z = 12;
 
 	// Main loop
 	while (aptMainLoop())
@@ -331,8 +488,8 @@ int main()
 		u32 tickDelta = newTick - tick;
 		tick = newTick;
 		float delta = tickDelta * invTickRate;
-		if (delta > 0.5f) 
-			delta = 0.5f; 
+		if (delta > 0.05f) // aim for minimum 20 fps, anything less is a spike
+			delta = 0.05f; 
 
 		handlePlayer(delta);
 
