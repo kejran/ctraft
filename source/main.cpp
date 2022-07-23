@@ -146,23 +146,37 @@ int lfloor(float v) {
 	0
 */
 
-float collideFloor(float z, int x, int y, float height, bool &cz) {
+float collideFloor(fvec3 pos, float height, float radius, bool &cz) {
+
+	float tx = pos.x;
+	float ty = pos.y;
+	
+	int x = lfloor(tx);
+	int y = lfloor(ty);
+
+	int l = lfloor(tx - radius);
+	int r = lfloor(tx + radius);
+	int b = lfloor(ty - radius);
+	int f = lfloor(ty + radius);
+
 	height -= 0.1f;
-	{
-		int t = lfloor(z + height);
-		if (tryGetBlock(x, y, t)) {
-			z = t - height;
-			cz = true;
-		}
-	}
-	{
-		int b = lfloor(z);
-		if (tryGetBlock(x, y, b)) {
-			z = b + 1;
-			cz = true;
-		}
-	}  
-	return z;
+
+	float zz = pos.z;
+
+	for (int _y = b; _y <= f; ++_y)
+	 	for (int _x = l; _x <= r; ++_x) {
+			int t = lfloor(pos.z + height);
+			if (tryGetBlock(_x, _y, t)) {
+				zz = t - height;
+				cz = true;
+			}
+			int b = lfloor(pos.z);
+			if (tryGetBlock(_x, _y, b)) {
+				zz = b + 1;
+				cz = true;
+			}
+		} 
+	return zz;
 }
 
 //	0	1	2	3
@@ -247,8 +261,10 @@ void moveAndCollide(fvec3 &position, fvec3 &velocity, float delta, float radius,
 		cy |= lcy;
 
 	}
-
-	float tz = collideFloor(position.z + displacement.z, lfloor(target.x), lfloor(target.y), height, cz);
+	position.x = target.x; 
+	position.y = target.y;
+	position.z += displacement.z;
+	position.z = collideFloor(position, height, radius, cz);
 
 	if (cx)
 		velocity.x = 0;
@@ -257,7 +273,6 @@ void moveAndCollide(fvec3 &position, fvec3 &velocity, float delta, float radius,
 	if (cz)
 		velocity.z = 0;
 
-	position.x = target.x; position.y = target.y; position.z = tz;
 }
 
 static void sceneInit(void)
@@ -333,7 +348,7 @@ void handlePlayer(float delta) {
 
 	// movement
 
-	float walkSpeed = (hidKeysDown() & KEY_B) ? 0.1f : 2;
+	float walkSpeed = (hidKeysDown() & KEY_B) ? 7 : 3;
 	float walkAcc = 50;
 
 	hidCircleRead(&cp);
