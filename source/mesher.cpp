@@ -206,8 +206,6 @@ MesherAllocation meshChunk(chunk const &ch, std::array<chunk *, 6> const &sides)
 		}
 	}
 
-	//printf("v: %i, i: %i\n", (int)vertices.size(), (int)indices.size());
-
 	MesherAllocation result;
 
 	u16 totalIdxCount = 0;
@@ -233,10 +231,10 @@ MesherAllocation meshChunk(chunk const &ch, std::array<chunk *, 6> const &sides)
 		if (result.vertices == nullptr) // todo safe allocation	
 			svcBreak(USERBREAK_PANIC);
 		memcpy(result.vertices, vertices.data(), result.vertexCount * sizeof(vertex));
-		result.indices = linearAlloc(indicesFlat.size() * sizeof(uint16_t));
+		result.indices = linearAlloc(indicesFlat.size() * sizeof(u16));
 		if (result.indices == nullptr)
 			svcBreak(USERBREAK_PANIC);
-		memcpy(result.indices, indicesFlat.data(), indicesFlat.size() * sizeof(uint16_t));
+		memcpy(result.indices, indicesFlat.data(), indicesFlat.size() * sizeof(u16));
 	}
 	else {
 		result.vertexCount = 0; 

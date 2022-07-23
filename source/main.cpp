@@ -108,6 +108,16 @@ static bool loadTextureFromMem(C3D_Tex* tex, C3D_TexCube* cube, const void* data
 	return true;
 }	
 
+float playerX = 0, playerY = 0, playerVelX = 0, playerVelY = 0;
+
+fvec2 collide(fvec2 position, float radius) {
+	
+}
+
+fvec3 collide(fvec3 position, float radius, int height) {
+
+}
+
 static void sceneInit(void)
 {
 	// Load the vertex shader, create a shader program and bind it
@@ -161,28 +171,73 @@ static void sceneInit(void)
 	C3D_TexEnvFunc(env, C3D_Both, GPU_MODULATE);
 }
 
-static void sceneRender(float iod)
-{
-	// Calculate the modelView matrix
-	C3D_Mtx modelView;
-	Mtx_Identity(&modelView);
-	Mtx_Translate(&modelView, 0.0f, 0.0f, -chunkSize*2, true);
+void handlePlayer(float delta) {
 
-	Mtx_RotateX(&modelView, angleY, true);
-	Mtx_RotateY(&modelView, angleX, true);
+	// rotation
 
-	Mtx_RotateX(&modelView, -M_PI/2, true);
-	Mtx_Translate(&modelView, -chunkSize/2, -chunkSize/2, -chunkSize/2, true);
-	
 	circlePosition cp;
 	hidCstickRead(&cp);
+
 	float dx = cp.dx * 0.01f;
 	float dy = cp.dy * 0.01f;
 	float t = 0.1f;
 	if (dx > t || dx < -t) dx = dx > 0 ? dx - t : dx + t; else dx = 0;
 	if (dy > t || dy < -t) dy = dy > 0 ? dy - t : dy + t; else dy = 0;
-	angleX += dx * 0.02f;
-	angleY -= dy * 0.02f;
+
+	angleX += dx * 0.05f;
+	angleY -= dy * 0.05f;
+	if (angleY > M_PI_2) angleY = M_PI_2;
+	if (angleY < -M_PI_2) angleY = -M_PI_2;
+
+	// movement
+
+	float walkSpeed = 5;
+	float walkAcc = 5;
+
+	hidCircleRead(&cp);
+	float angleM = atan2f(cp.dx, cp.dy) + angleX;
+	float mag2 = cp.dx*cp.dx + cp.dy*cp.dy;
+
+	float targetX = 0;
+	float targetY = 0;
+	if (mag2 > 40*40) {
+		if (mag2 > 140*140) 
+			mag2 = 140*140;
+		float mag = sqrtf(mag2);
+		mag -= 40;
+		float targetMag = delta * walkSpeed * mag / 100;
+		
+		targetX = sinf(angleM) * targetMag;
+		targetY = cosf(angleM) * targetMag;
+	} 
+
+	float vdx = targetX - playerVelX;
+	float vdy = targetY - playerVelY;
+	float maxDelta = walkAcc * delta;
+	float vmag2 = vdx*vdx+vdy*vdy;
+	if (maxDelta*maxDelta < vmag2) {
+		float imag = maxDelta / sqrtf(vmag2);
+		vdx *= imag;
+		vdy *= imag;
+	}
+	playerVelX += vdx;
+	playerVelY += vdy;
+	playerX += playerVelX;
+	playerY += playerVelY;
+}
+
+void sceneRender(float iod) {
+
+	// Calculate the modelView matrix
+	C3D_Mtx modelView;
+	Mtx_Identity(&modelView);
+	// Mtx_Translate(&modelView, 0.0f, 0.0f, -chunkSize*2, true);
+
+	Mtx_RotateX(&modelView, angleY, true);
+	Mtx_RotateY(&modelView, angleX, true);
+
+	Mtx_RotateX(&modelView, -M_PI/2, true);
+	Mtx_Translate(&modelView, -playerX, -playerY, -10, true);
 
 	Mtx_PerspStereoTilt(&projection, C3D_AngleFromDegrees(40.0f), C3D_AspectRatioTop, 0.1f, 100, iod, 2.0f, false);
 
@@ -215,7 +270,7 @@ static void sceneRender(float iod)
 		}
 }
 
-static void sceneExit(void)
+void sceneExit(void)
 {
 	// Free the texture
 	for (auto &t: textures)
@@ -232,6 +287,10 @@ static void sceneExit(void)
 	shaderProgramFree(&program);
 	DVLB_Free(vshader_dvlb);
 }
+
+static constexpr float invTickRate = 1.0f / SYSCLOCK_ARM11;
+
+
 
 int main()
 {
@@ -253,6 +312,8 @@ int main()
 	// Initialize the scene
 	sceneInit();
 
+	u64 tick = svcGetSystemTick(); 
+
 	// Main loop
 	while (aptMainLoop())
 	{
@@ -266,7 +327,16 @@ int main()
 		if (kDown & KEY_START)
 			break; // break in order to return to hbmenu
 
-		bool should3d = iod > 0.001f;
+		u64 newTick = svcGetSystemTick();
+		u32 tickDelta = newTick - tick;
+		tick = newTick;
+		float delta = tickDelta * invTickRate;
+		if (delta > 0.5f) 
+			delta = 0.5f; 
+
+		handlePlayer(delta);
+
+		bool should3d = iod > 0.01f;
 		if (should3d != gfxIs3D()) 
 			gfxSet3D(should3d);
 
