@@ -56,9 +56,9 @@ using WorldMap = std::unordered_map<s16vec3, ChunkMetadata, s16vec3::hash>;
 WorldMap world;
 
 u16 blockAt(int x, int y, int z) {
-	const float sc = 0.05f;
+	const float sc = 0.02f;
 	float noise = noise3d(0, x*sc, y*sc, z*sc)*4-z+chunkSize/2;
-	return noise > 0 ? 1 : 0;
+	return noise > 0 ? 1 : noise > 0.5f ? 3 : 0;
 }
 
 ChunkMetadata &fillChunk(s16 cx, s16 cy, s16 cz) {
@@ -295,6 +295,86 @@ void moveAndCollide(fvec3 &position, fvec3 &velocity, float delta, float radius,
 
 }
 
+// https://github.com/fenomas/fast-voxel-raycast/blob/master/index.js
+bool raycast(fvec3 eye, fvec3 dir, float maxLength, vec3<s32> &out) {
+	float norm = 1 / sqrtf(dir.x*dir.x*+dir.y*dir.y+dir.z*dir.z);
+	dir.x *= norm; dir.y *= norm; dir.z *= norm;
+
+	int ix = lfloor(eye.x); int iy = lfloor(eye.y); int iz = lfloor(eye.z);
+	int stepx = (dir.x > 0) ? 1 : -1, stepy = (dir.y > 0) ? 1 : -1, stepz = (dir.z > 0) ? 1 : -1;
+
+	float txDelta = fabsf(1 / dir.x), tyDelta = fabsf(1 / dir.y), tzDelta = fabsf(1 / dir.z);
+	
+	float xdist = (stepx > 0) ? (ix + 1 - eye.x) : (eye.x - ix); 
+	float ydist = (stepy > 0) ? (iy + 1 - eye.y) : (eye.y - iy);
+	float zdist = (stepz > 0) ? (iz + 1 - eye.z) : (eye.z - iz);
+
+	float txMax = (txDelta < INFINITY) ? txDelta * xdist : INFINITY;
+	float tyMax = (tyDelta < INFINITY) ? tyDelta * ydist : INFINITY;
+	float tzMax = (tzDelta < INFINITY) ? tzDelta * zdist : INFINITY;
+
+	int steppedIndex = -1; 
+	float t_ = 0;
+//			printf("%i, %i, %i\n", ix, iy, iz);
+
+	while (t_ <= maxLength) {
+
+		// exit check
+		auto b = tryGetBlock(ix, iy, iz);
+		if (b == 0xffff) 
+			return false;
+		if (b) {
+			
+			out.x = ix; out.y = iy; out.z = iz;
+			return true;
+			// if (hit_pos) {
+			// 	hit_pos[0] = px + t * dx
+			// 	hit_pos[1] = py + t * dy
+			// 	hit_pos[2] = pz + t * dz
+			// }
+			// if (hit_norm) {
+			// 	hit_norm[0] = hit_norm[1] = hit_norm[2] = 0
+			// 	if (steppedIndex === 0) hit_norm[0] = -stepx
+			// 	if (steppedIndex === 1) hit_norm[1] = -stepy
+			// 	if (steppedIndex === 2) hit_norm[2] = -stepz
+			// }
+			//return b
+		}
+		
+		// advance t to next nearest voxel boundary
+		if (txMax < tyMax) {
+			if (txMax < tzMax) {
+				ix += stepx;
+				t_ = txMax;
+				txMax += txDelta;
+				steppedIndex = 0;
+			} else {
+				iz += stepz;
+				t_ = tzMax;
+				tzMax += tzDelta;
+				steppedIndex = 2;
+			}
+		} else {
+			if (tyMax < tzMax) {
+				iy += stepy;
+				t_ = tyMax;
+				tyMax += tyDelta;
+				steppedIndex = 1;
+			} else {
+				iz += stepz;
+				t_ = tzMax;
+				tzMax += tzDelta;
+				steppedIndex = 2;
+			}
+		}
+
+	}
+	
+	// no voxel hit found
+	
+	return false;
+}
+
 static void sceneInit(void)
 {
 	// Load the vertex shader, create a shader program and bind it
@@ -410,6 +490,14 @@ void handlePlayer(float delta) {
 		player.velocity.z = -10;
 	
 	moveAndCollide(player.pos, player.velocity, delta, 0.4f, 2);	
+
+	vec3<s32> rayHit;
+	fvec3 dir {sinf(angleX) * cosf(angleY), cosf(angleX) * cosf(angleY), -sinf(angleY)};
+	bool hit = raycast(
+		{player.pos.x, player.pos.y, player.pos.z + 1.5f}, 
+		dir,
+		3, rayHit);
+	//	printf(hit ? "hit\n" : "no hit\n");
 }
 
 static constexpr int distanceLoad = 3; // blocks to load, cage size 2n+1
