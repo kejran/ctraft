@@ -1,6 +1,7 @@
 #include <stdio.h>
 
 #include "mesher.hpp"
+#include <cassert>
 
 // right handed?
 /*
@@ -79,6 +80,10 @@ inline int _inm(int dir, int position) {
 	else return 0;
 }
 
+inline int _rev(int uv, int dir) {
+	return uv ? dir : -dir;
+}
+
 // todo handle allocation errors
 
 MesherAllocation meshChunk(chunk const &ch, std::array<chunk *, 6> const &sides) {
@@ -120,6 +125,8 @@ MesherAllocation meshChunk(chunk const &ch, std::array<chunk *, 6> const &sides)
 			for (int x = 0; x < chunkSize; ++x)
 				cch[chunkSize+1][y + 1][x + 1] = (*sides[5])[0][y][x];
 
+	// todo refactor this using templates + lambda accessor for each side  
+
 	for (int s = 0; s < 6; ++s) { // side
 		
 		// ghetto matrix math
@@ -152,22 +159,26 @@ MesherAllocation meshChunk(chunk const &ch, std::array<chunk *, 6> const &sides)
 				for (int u = 0; u < chunkSize; ++u) {
 					uint16_t vidxs[4];
 
+					// this is block position in the grid
 					u8 x = lx + ux + vx;
 					u8 y = ly + uy + vy;
 					u8 z = lz + uz + vz;
 					
-					u16 self = ch[z][y][x] & 0x3; // mod for now
+					u16 self = ch[z][y][x];
 					bool draw = self > 0;
 					if (draw) {
-						s8 sx = x + normX;
-						s8 sy = y + normY;
-						s8 sz = z + normZ;
-						u16 other = cch[sz+1][sy+1][sx+1] & 0x3;
+						// neighbouring block of this face
+						s8 sx = x + normX + 1;
+						s8 sy = y + normY + 1;
+						s8 sz = z + normZ + 1;
+						u16 other = cch[sz][sy][sx];
 						draw = other == 0;
 					}
 					if (draw) {
 						for (int i = 0; i < 4; ++i) {
+							// vertex positon in its face coordinates
 							auto uv = basicCubeUVs[i]; 
+							// vertex position in chunk plane
 							auto guv = uv;
 							guv.x += u; guv.y += v;
 							auto cidx = guv.x + guv.y * (chunkSize+1);
@@ -176,6 +187,7 @@ MesherAllocation meshChunk(chunk const &ch, std::array<chunk *, 6> const &sides)
 								vidx = static_cast<u16>(vertices.size()); 
 								vertexCache[cidx] = vidx;
 								auto &n = vertices.emplace_back();
+								// position of the vertex
 								u8 _x = x + nx;
 								u8 _y = y + ny;
 								u8 _z = z + nz;
@@ -185,18 +197,51 @@ MesherAllocation meshChunk(chunk const &ch, std::array<chunk *, 6> const &sides)
 								n.position = { _x, _y, _z };
 								n.texcoord = guv;
 								n.normal = { normX, normY, normZ };
+
+								int aoX = x + 1 + normX;
+								int aoY = y + 1 + normY;
+								int aoZ = z + 1 + normZ;
+								int aoUX = _rev(uv.x, texUX); 
+								int aoUY = _rev(uv.x, texUY); 
+								int aoUZ = _rev(uv.x, texUZ); 
+								int aoVX = _rev(uv.y, texVX); 
+								int aoVY = _rev(uv.y, texVY); 
+								int aoVZ = _rev(uv.y, texVZ);
+
+								// https://0fps.net/2013/07/03/ambient-occlusion-for-minecraft-like-worlds/
+								bool side1 = cch[aoZ + aoUZ][aoY + aoUY][aoX + aoUX] > 0; 
+								bool side2 = cch[aoZ + aoVZ][aoY + aoVY][aoX + aoVX] > 0; 
+								if (side1 && side2)
+									n.ao = 0;
+								else {
+									bool corner = cch[aoZ + aoUZ + aoVZ][aoY + aoUY + aoVY][aoX + aoUX + aoVX]; 
+									n.ao = 3 - (side1 + side2 + corner);
+								}
 							}
 
 							vidxs[i] = vidx;
 						}
 						auto vis = blockVisuals[self - 1];
 						auto &vec = isPerTexture[vis[s]];
-						vec.push_back(vidxs[0]);
-						vec.push_back(vidxs[1]);
-						vec.push_back(vidxs[2]);
-						vec.push_back(vidxs[0]);
-						vec.push_back(vidxs[2]);
-						vec.push_back(vidxs[3]);
+
+						if (
+							vertices[vidxs[0]].ao + vertices[vidxs[2]].ao > 
+							vertices[vidxs[1]].ao + vertices[vidxs[3]].ao
+						){	
+							vec.push_back(vidxs[0]);
+							vec.push_back(vidxs[1]);
+							vec.push_back(vidxs[2]);
+							vec.push_back(vidxs[0]);
+							vec.push_back(vidxs[2]);
+							vec.push_back(vidxs[3]);
+						} else {
+							vec.push_back(vidxs[1]);
+							vec.push_back(vidxs[2]);
+							vec.push_back(vidxs[3]);
+							vec.push_back(vidxs[1]);
+							vec.push_back(vidxs[3]);
+							vec.push_back(vidxs[0]);
+						}
 					}
 					ux += texUX; uy += texUY; uz += texUZ;	
 				}

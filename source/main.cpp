@@ -16,7 +16,7 @@
 #include "stone_t3x.h"
 
 #include <cmath>
-
+#include <cassert>
 
 #define CLEAR_COLOR 0x68B0D8FF
 
@@ -36,8 +36,10 @@ static C3D_Mtx projection;
 static C3D_Mtx material =
 {
 	{ // ABGR
-	{ { 0.0f, 0.4f, 0.3f, 0.2f } }, // Ambient
-	{ { 0.0f, 0.5f, 0.7f, 0.8f } }, // Diffuse
+	//{ { 0.0f, 0.4f, 0.3f, 0.2f } }, // Ambient
+	//{ { 0.0f, 0.5f, 0.7f, 0.8f } }, // Diffuse
+	{ { 0.0f, 1.0f, 1.0f, 1.0f } }, // Ambient
+	{ { 0.0f, 0.0f, 0.0f, 0.0f } }, // Diffuse
 	}
 };
 
@@ -76,7 +78,6 @@ ChunkMetadata &fillChunk(s16 cx, s16 cy, s16 cz) {
 				}			
 				(*meta.data)[lz][ly][lx] = block;
 		}
-
 	return meta;
 }
 
@@ -112,7 +113,7 @@ void initMeshVisuals(ChunkMetadata &meta, std::array<chunk *, 6> const &sides) {
 	meta.allocation = meshChunk(*meta.data, sides);
 	if (meta.allocation.vertexCount) {
 		BufInfo_Init(&meta.vertexBuffer);
-		BufInfo_Add(&meta.vertexBuffer, meta.allocation.vertices, sizeof(vertex), 3, 0x210);
+		BufInfo_Add(&meta.vertexBuffer, meta.allocation.vertices, sizeof(vertex), 4, 0x3210);
 	}
 	meta.meshed = true;
 }
@@ -316,6 +317,7 @@ static void sceneInit(void)
 	AttrInfo_AddLoader(attrInfo, 0, GPU_UNSIGNED_BYTE, 3); // v0=position
 	AttrInfo_AddLoader(attrInfo, 1, GPU_UNSIGNED_BYTE, 2); // v1=texcoord
 	AttrInfo_AddLoader(attrInfo, 2, GPU_BYTE, 3); // v2=normal
+	AttrInfo_AddLoader(attrInfo, 3, GPU_UNSIGNED_BYTE, 1); // v3=ao
 			
 	// Load the texture and bind it to the first texture unit
 
@@ -399,7 +401,7 @@ void handlePlayer(float delta) {
 
 	if ((kDown & KEY_A) && player.velocity.z < 0.1f)
 		// todo raycast down
-		player.velocity.z = 4.8f; // adjust until it feels ok
+		player.velocity.z = 3*4.8f; // adjust until it feels ok
 	else
 		player.velocity.z -= 9.81f * delta;
 	
@@ -523,6 +525,8 @@ int main()
 	u64 tick = svcGetSystemTick(); 
 	
 	player.pos.z = 12;
+	player.pos.x = -5;
+	player.pos.y = 5;	
 
 	// Main loop
 	while (aptMainLoop())

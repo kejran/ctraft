@@ -38,6 +38,7 @@ struct vertex {
     u8vec3 position; 
     u8vec2 texcoord; 
     s8vec3 normal; 
+	u8 ao;
 };
 
 using BlockVisual = std::array<u8, 6>;

@@ -8,6 +8,8 @@
 	
 	; Constants
 	.constf myconst(0.0, 1.0, -1.0, -0.5)
+	.constf myconst2(0.5, 0.25, 0.125, 0.0)
+	
 	.alias  zeros myconst.xxxx ; Vector full of zeros
 	.alias  ones  myconst.yyyy ; Vector full of ones
 	
@@ -20,6 +22,7 @@
 	.alias inpos v0
 	.alias intex v1
 	.alias innrm v2
+	.alias inao v3
 	
 	.proc main
 		; Force the w component of inpos to be 1.0
@@ -56,7 +59,7 @@
 	
 		mov r1.xyz, innrm
 
-		; Calculate the diffuse level (r0.x) and the shininess level (r0.y)
+		; Calculate the diffuse level (r0.x)
 		; r0.x = max(0, -(lightVec * r1))
 		; r0.y = max(0, (-lightHalfVec[i]) * r1) ^ 2
 		dp3 r0.x, lightVec,      r1
@@ -79,7 +82,7 @@
 		mad r1, r2, mat_dif, r1
 	
 		; r1 += ambientColor * lightClr
-		mov r2, lightClr
+		mul r2, myconst2.yyyy, inao.xxxx 
 		mad r1, r2, mat_amb, r1
 	
 		; outclr = clamp r1 to [0,1]
