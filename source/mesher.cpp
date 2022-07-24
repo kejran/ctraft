@@ -224,23 +224,32 @@ MesherAllocation meshChunk(chunk const &ch, std::array<chunk *, 6> const &sides)
 		}
 	}
 
+	result.vertexCount = 0; 
+	result.indices = nullptr;
+	result.vertices = nullptr;	
+
 	if (vertices.size() || indicesFlat.size()) {
 
 		result.vertexCount = vertices.size();
 		result.vertices = linearAlloc(result.vertexCount * sizeof(vertex));
-		if (result.vertices == nullptr) // todo safe allocation	
-			svcBreak(USERBREAK_PANIC);
+		if (result.vertices == nullptr) 
+		{
+			printf("failed linear allocation\n");
+			return result;
+		}
+//			svcBreak(USERBREAK_PANIC);
 		memcpy(result.vertices, vertices.data(), result.vertexCount * sizeof(vertex));
 		result.indices = linearAlloc(indicesFlat.size() * sizeof(u16));
-		if (result.indices == nullptr)
-			svcBreak(USERBREAK_PANIC);
+		if (result.indices == nullptr) {
+			printf("failed linear allocation\n");
+			linearFree(result.vertices);
+			result.vertices = nullptr;
+			return result;
+//			svcBreak(USERBREAK_PANIC);
+		}
 		memcpy(result.indices, indicesFlat.data(), indicesFlat.size() * sizeof(u16));
 	}
-	else {
-		result.vertexCount = 0; 
-		result.indices = nullptr;
-		result.vertices = nullptr;	
-	}
+
 	return result;
 }
 

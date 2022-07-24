@@ -94,6 +94,8 @@ u16 tryGetBlock(int x, int y, int z) {
 }
 
 void initMeshVisuals(ChunkMetadata &meta, std::array<chunk *, 6> const &sides) {
+	if (meta.allocation.vertexCount)
+		freeMesh(meta.allocation);
 	meta.allocation = meshChunk(*meta.data, sides);
 	if (meta.allocation.vertexCount) {
 		BufInfo_Init(&meta.vertexBuffer);
@@ -102,8 +104,13 @@ void initMeshVisuals(ChunkMetadata &meta, std::array<chunk *, 6> const &sides) {
 	meta.meshed = true;
 }
 
-void initMeshVisuals(int x, int y, int z) {
-	initMeshVisuals(getOrInitChunk(x, y, z), std::array<chunk *, 6> {
+void initMeshVisuals(int x, int y, int z, bool force = false) {
+
+	auto &ch = getOrInitChunk(x, y, z);
+	if (ch.meshed && !force)
+		return;
+//	printf ("init %i %i %i\n", x, y, z);
+	initMeshVisuals(ch, std::array<chunk *, 6> {
 		getOrInitChunk(x-1, y, z).data,
 		getOrInitChunk(x+1, y, z).data,
 		getOrInitChunk(x, y-1, z).data,
@@ -111,6 +118,19 @@ void initMeshVisuals(int x, int y, int z) {
 		getOrInitChunk(x, y, z-1).data,
 		getOrInitChunk(x, y, z+1).data
 	});
+	printf ("%i\n", world.size());
+}
+
+WorldMap::iterator destroyChunk(WorldMap::iterator it) {
+	delete it->second.data;
+	freeMesh(it->second.allocation);	
+	return world.erase(it);
+}
+
+void destroyChunk(s16vec3 v) {
+	auto it = world.find(v); 
+	if (it != world.end()) 
+		destroyChunk(it);
 }
 
 static float angleX = 0.0, angleY = 0.0;
@@ -151,9 +171,6 @@ float collideFloor(fvec3 pos, float height, float radius, bool &cz) {
 	float tx = pos.x;
 	float ty = pos.y;
 	
-	int x = lfloor(tx);
-	int y = lfloor(ty);
-
 	int l = lfloor(tx - radius);
 	int r = lfloor(tx + radius);
 	int b = lfloor(ty - radius);
@@ -195,9 +212,6 @@ fvec2 collide2d(fvec2 position, int z, float radius, bool &cx, bool &cy) {
 	float tx = position.x;// + displacement.x;
 	float ty = position.y;// + displacement.y;
 	
-	int x = lfloor(tx);
-	int y = lfloor(ty);
-
 	int l = lfloor(tx - radius);
 	int r = lfloor(tx + radius);
 	int b = lfloor(ty - radius);
@@ -298,10 +312,6 @@ static void sceneInit(void)
 	AttrInfo_AddLoader(attrInfo, 1, GPU_UNSIGNED_BYTE, 2); // v1=texcoord
 	AttrInfo_AddLoader(attrInfo, 2, GPU_BYTE, 3); // v2=normal
 			
-	for (int x = -2; x <= 2; ++x)
-		for (int y = -2; y <= 2; ++y)
-			initMeshVisuals(x, y, 0);
-
 	// Load the texture and bind it to the first texture unit
 
 	// todo optimize it with arrays or something
@@ -348,7 +358,7 @@ void handlePlayer(float delta) {
 
 	// movement
 
-	float walkSpeed = (hidKeysDown() & KEY_B) ? 7 : 3;
+	float walkSpeed = (hidKeysDown() & KEY_B) ? 10 : 20;
 	float walkAcc = 50;
 
 	hidCircleRead(&cp);
@@ -392,9 +402,43 @@ void handlePlayer(float delta) {
 	if (player.velocity.z < -10) 
 		player.velocity.z = -10;
 	
-	moveAndCollide(player.pos, player.velocity, delta, 0.4f, 2);
-	
+	moveAndCollide(player.pos, player.velocity, delta, 0.4f, 2);	
 }
+
+static constexpr int distanceLoad = 3; // blocks to load, cage size 2n+1
+static constexpr int distanceUnload = 5; // blocks to unload, keep blocks in cage of 2n+1 
+
+// note that a 1-chunk thick shell will generate outside the render cage since it is needed for meshing
+
+void updateWorld(fvec3 focus) {
+
+	int chX = static_cast<int>(focus.x) >> chunkBits;
+	int chY = static_cast<int>(focus.y) >> chunkBits;
+	int chZ = static_cast<int>(focus.z) >> chunkBits;
+
+	for (auto it = world.begin(); it != world.end();) {
+		auto &idx = it->first;
+		if (
+			idx.x < chX - distanceUnload ||
+			idx.x > chX + distanceUnload ||
+			idx.y < chY - distanceUnload ||
+			idx.y > chY + distanceUnload ||
+			idx.y < chY - distanceUnload ||
+			idx.z > chZ + distanceUnload
+		)
+			it = destroyChunk(it);
+		else
+			++it;
+	}
+
+//	int z = 0;
+	for (int z = chZ - distanceLoad; z <= chZ + distanceLoad; ++z)
+		for (int y = chY - distanceLoad; y <= chY + distanceLoad; ++y)
+			for (int x = chX - distanceLoad; x <= chX + distanceLoad; ++x)
+				initMeshVisuals(x, y, z);
+
+}
+
 
 void sceneRender(float iod) {
 
@@ -489,6 +533,10 @@ int main()
 	// Main loop
 	while (aptMainLoop())
 	{
+
+		// do it before input and vsync wait
+		updateWorld(player.pos);
+
 		hidScanInput();
 
 		float slider = osGet3DSliderState();
