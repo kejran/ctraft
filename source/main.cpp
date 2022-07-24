@@ -54,13 +54,19 @@ WorldMap world;
 ChunkMetadata &fillChunk(s16 cx, s16 cy, s16 cz) {
 	auto &meta = world[{cx, cy, cz}];
 	meta.data = new chunk();
-	int x = cx * chunkSize; int y = cy * chunkSize; int z = cz * chunkSize;
+	int x = cx << chunkBits; int y = cy << chunkBits; int z = cz << chunkBits;
 
 	for (int lx = 0; lx < chunkSize; ++lx)
 		for (int ly = 0; ly < chunkSize; ++ly)
 			for (int lz = 0; lz < chunkSize; ++lz) {
 				int _x = x + lx; int _y = y + ly; int _z = z + lz;
-				u16 block = (Noise3_ImproveXY(0, _x*0.1, _y*0.1, _z*0.1)*4-_z+chunkSize/2) > 0 ? 2 : 0;// z > 5 ? 0 : z == 5 ? 2 : z > 2 ? 1 : 3; 
+				u16 block = (Noise3_ImproveXY(0, _x*0.1, _y*0.1, _z*0.1)*4-_z+chunkSize/2) > 0 ? 1 : 0;// z > 5 ? 0 : z == 5 ? 2 : z > 2 ? 1 : 3; 
+				if (block == 1) {
+					u16 above = (Noise3_ImproveXY(0, _x*0.1, _y*0.1, (_z+1)*0.1)*4-_z+chunkSize/2); 
+					if (above == 0)
+						block = 2;
+				}			
+				//u16 block = _z < 4;
 				(*meta.data)[lz][ly][lx] = block;
 		}
 
