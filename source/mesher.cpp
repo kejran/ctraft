@@ -181,7 +181,6 @@ MesherAllocation meshChunk(chunk const &ch, std::array<chunk *, 6> const &sides)
 								u8 _z = z + nz;
 								if (uv.x) { _x += texUX; _y += texUY; _z += texUZ; }
 								if (uv.y) { _x += texVX; _y += texVY; _z += texVZ; }
-								// printf("%i,%i,%i: %i, %i, %i / %i\n", u, v, l, x, y, z, s);
 
 								n.position = { _x, _y, _z };
 								n.texcoord = guv;
@@ -237,7 +236,6 @@ MesherAllocation meshChunk(chunk const &ch, std::array<chunk *, 6> const &sides)
 			printf("failed linear allocation\n");
 			return result;
 		}
-//			svcBreak(USERBREAK_PANIC);
 		memcpy(result.vertices, vertices.data(), result.vertexCount * sizeof(vertex));
 		result.indices = linearAlloc(indicesFlat.size() * sizeof(u16));
 		if (result.indices == nullptr) {
@@ -245,7 +243,6 @@ MesherAllocation meshChunk(chunk const &ch, std::array<chunk *, 6> const &sides)
 			linearFree(result.vertices);
 			result.vertices = nullptr;
 			return result;
-//			svcBreak(USERBREAK_PANIC);
 		}
 		memcpy(result.indices, indicesFlat.data(), indicesFlat.size() * sizeof(u16));
 	}

@@ -64,27 +64,18 @@ ChunkMetadata &fillChunk(s16 cx, s16 cy, s16 cz) {
 	meta.data = new chunk();
 	int x = cx << chunkBits; int y = cy << chunkBits; int z = cz << chunkBits;
 
-	u32 tstart = svcGetSystemTick();
 	for (int lx = 0; lx < chunkSize; ++lx)
 		for (int ly = 0; ly < chunkSize; ++ly)
 			for (int lz = 0; lz < chunkSize; ++lz) {
 				int _x = x + lx; int _y = y + ly; int _z = z + lz;
-				//u16 block = (Noise3_ImproveXY(0, _x*0.1, _y*0.1, _z*0.1)*4-_z+chunkSize/2) > 0 ? 1 : 0;
-				//float f = 1*_fnlSingleOpenSimplex23D(0,_x*0.1f, _y*0.1f, _z*0.1f);
-				//u16 block = (f*4-_z+chunkSize/2) > 0 ? 1 : 0; 
-				//printf("%f\n", f);
 				u16 block = blockAt(_x, _y, _z); 
 				if (block == 1) { //  we are dirt, check one block up
 					u16 above = blockAt(_x, _y, _z + 1); 
 					if (above == 0)
 						block = 2;
 				}			
-				//u16 block = _z < 4;
 				(*meta.data)[lz][ly][lx] = block;
 		}
-
-	u32 tend = svcGetSystemTick();
-	printf("%f\n", (tend - tstart) * invTickRate * 1000);
 
 	return meta;
 }
@@ -131,7 +122,6 @@ void initMeshVisuals(int x, int y, int z, bool force = false) {
 	auto &ch = getOrInitChunk(x, y, z);
 	if (ch.meshed && !force)
 		return;
-//	printf ("init %i %i %i\n", x, y, z);
 	initMeshVisuals(ch, std::array<chunk *, 6> {
 		getOrInitChunk(x-1, y, z).data,
 		getOrInitChunk(x+1, y, z).data,
@@ -140,7 +130,6 @@ void initMeshVisuals(int x, int y, int z, bool force = false) {
 		getOrInitChunk(x, y, z-1).data,
 		getOrInitChunk(x, y, z+1).data
 	});
-	// printf ("%i\n", world.size());
 }
 
 WorldMap::iterator destroyChunk(WorldMap::iterator it) {
@@ -231,8 +220,8 @@ fvec2 collide2d(fvec2 position, int z, float radius, bool &cx, bool &cy) {
 	// any distance closer than radius + half-block are a collision
 	float colDist = radius + 0.5f;
 
-	float tx = position.x;// + displacement.x;
-	float ty = position.y;// + displacement.y;
+	float tx = position.x;
+	float ty = position.y;
 	
 	int l = lfloor(tx - radius);
 	int r = lfloor(tx + radius);
@@ -242,7 +231,6 @@ fvec2 collide2d(fvec2 position, int z, float radius, bool &cx, bool &cy) {
 	for (int _y = b; _y <= f; ++_y)
 	 	for (int _x = l; _x <= r; ++_x) 
 			if (tryGetBlock(_x, _y, z)) {
-				// printf("gottem @ %i,%i\n", _x, _y);
 				// distances to centers of blocks
 				float distX = _x - tx + 0.5f; // vector from player to centre of block 
 				float distY = _y - ty + 0.5f;
@@ -276,11 +264,6 @@ void moveAndCollide(fvec3 &position, fvec3 &velocity, float delta, float radius,
 		velocity.y * delta, 
 		velocity.z * delta
 	};
-
-//	float maxDisp = std::max(std::abs(displacement.x), std::max(std::abs(displacement.y), std::abs(displacement.z)));
-	// 0 -> 1; 0.8 -> 1; 1 -> 2
-//	int iterations = static_cast<int>(maxDisp + 1.1f);
-//	(void)iterations; // todo use
 
 	int baseZ = static_cast<int>(floorf(position.z + 0.01f));// gimme floor to int damn it
 	float above = position.z - baseZ;
@@ -453,21 +436,17 @@ void updateWorld(fvec3 focus) {
 			++it;
 	}
 
-//	int z = 0;
 	for (int z = chZ - distanceLoad; z <= chZ + distanceLoad; ++z)
 		for (int y = chY - distanceLoad; y <= chY + distanceLoad; ++y)
 			for (int x = chX - distanceLoad; x <= chX + distanceLoad; ++x)
 				initMeshVisuals(x, y, z);
-
 }
-
 
 void sceneRender(float iod) {
 
 	// Calculate the modelView matrix
 	C3D_Mtx modelView;
 	Mtx_Identity(&modelView);
-	// Mtx_Translate(&modelView, 0.0f, 0.0f, -chunkSize*2, true);
 
 	Mtx_RotateX(&modelView, angleY, true);
 	Mtx_RotateY(&modelView, angleX, true);
@@ -532,10 +511,6 @@ int main()
 	gfxInitDefault();
 	C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
 	consoleInit(GFX_BOTTOM, NULL);
-
-	// Initialize the render target
-	// C3D_RenderTarget* target = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
-	// C3D_RenderTargetSetOutput(target, GFX_TOP, GFX_LEFT, DISPLAY_TRANSFER_FLAGS);
 
 	C3D_RenderTarget* targetLeft  = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
 	C3D_RenderTarget* targetRight = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);

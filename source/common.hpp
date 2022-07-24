@@ -45,3 +45,18 @@ using BlockVisual = std::array<u8, 6>;
 static constexpr int textureCount = 4;
 
 static constexpr float invTickRate = 1.0f / SYSCLOCK_ARM11;
+
+struct timeit {
+	char const *name_;
+	u32 start_;
+	
+	timeit(char const *name) { 
+		name_ = name; 
+		start_ = svcGetSystemTick();
+	}
+
+	~timeit() {
+		u32 end = svcGetSystemTick();
+		printf("%s: %fms\n", name_, (end - start_) * invTickRate * 1000);
+	}
+};
