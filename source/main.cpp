@@ -7,7 +7,8 @@
 
 #include "common.hpp"
 #include "mesher.hpp"
-#include "simplex.hpp"
+//#include "simplex.hpp"
+#include "noise.hpp"
 
 #include "dirt_t3x.h"
 #include "grass_side_t3x.h"
@@ -15,6 +16,7 @@
 #include "stone_t3x.h"
 
 #include <cmath>
+
 
 #define CLEAR_COLOR 0x68B0D8FF
 
@@ -51,24 +53,38 @@ using WorldMap = std::unordered_map<s16vec3, ChunkMetadata, s16vec3::hash>;
 
 WorldMap world;
 
+u16 blockAt(int x, int y, int z) {
+	const float sc = 0.05f;
+	float noise = noise3d(0, x*sc, y*sc, z*sc)*4-z+chunkSize/2;
+	return noise > 0 ? 1 : 0;
+}
+
 ChunkMetadata &fillChunk(s16 cx, s16 cy, s16 cz) {
 	auto &meta = world[{cx, cy, cz}];
 	meta.data = new chunk();
 	int x = cx << chunkBits; int y = cy << chunkBits; int z = cz << chunkBits;
 
+	u32 tstart = svcGetSystemTick();
 	for (int lx = 0; lx < chunkSize; ++lx)
 		for (int ly = 0; ly < chunkSize; ++ly)
 			for (int lz = 0; lz < chunkSize; ++lz) {
 				int _x = x + lx; int _y = y + ly; int _z = z + lz;
-				u16 block = (Noise3_ImproveXY(0, _x*0.1, _y*0.1, _z*0.1)*4-_z+chunkSize/2) > 0 ? 1 : 0;// z > 5 ? 0 : z == 5 ? 2 : z > 2 ? 1 : 3; 
-				if (block == 1) {
-					u16 above = (Noise3_ImproveXY(0, _x*0.1, _y*0.1, (_z+1)*0.1)*4-_z+chunkSize/2); 
+				//u16 block = (Noise3_ImproveXY(0, _x*0.1, _y*0.1, _z*0.1)*4-_z+chunkSize/2) > 0 ? 1 : 0;
+				//float f = 1*_fnlSingleOpenSimplex23D(0,_x*0.1f, _y*0.1f, _z*0.1f);
+				//u16 block = (f*4-_z+chunkSize/2) > 0 ? 1 : 0; 
+				//printf("%f\n", f);
+				u16 block = blockAt(_x, _y, _z); 
+				if (block == 1) { //  we are dirt, check one block up
+					u16 above = blockAt(_x, _y, _z + 1); 
 					if (above == 0)
 						block = 2;
 				}			
 				//u16 block = _z < 4;
 				(*meta.data)[lz][ly][lx] = block;
 		}
+
+	u32 tend = svcGetSystemTick();
+	printf("%f\n", (tend - tstart) * invTickRate * 1000);
 
 	return meta;
 }
@@ -124,7 +140,7 @@ void initMeshVisuals(int x, int y, int z, bool force = false) {
 		getOrInitChunk(x, y, z-1).data,
 		getOrInitChunk(x, y, z+1).data
 	});
-	printf ("%i\n", world.size());
+	// printf ("%i\n", world.size());
 }
 
 WorldMap::iterator destroyChunk(WorldMap::iterator it) {
@@ -364,7 +380,7 @@ void handlePlayer(float delta) {
 
 	// movement
 
-	float walkSpeed = (hidKeysDown() & KEY_B) ? 10 : 20;
+	float walkSpeed = (hidKeysDown() & KEY_B) ? 20 : 10;
 	float walkAcc = 50;
 
 	hidCircleRead(&cp);
@@ -510,11 +526,8 @@ void sceneExit(void)
 	DVLB_Free(vshader_dvlb);
 }
 
-static constexpr float invTickRate = 1.0f / SYSCLOCK_ARM11;
-
 int main()
 {
-	initSimplex();
 	// Initialize graphics
 	gfxInitDefault();
 	C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);

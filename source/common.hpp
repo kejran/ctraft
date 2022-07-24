@@ -43,3 +43,5 @@ struct vertex {
 using BlockVisual = std::array<u8, 6>;
 
 static constexpr int textureCount = 4;
+
+static constexpr float invTickRate = 1.0f / SYSCLOCK_ARM11;
