@@ -11,9 +11,9 @@ struct MesherAllocation {
         u8 texture;
     };
 
-	void *vertices; // todo merge into one allocation?
-	void *indices;
-	u16 vertexCount;
+	void *vertices = nullptr; // todo merge into one allocation?
+	void *indices = nullptr;
+	u16 vertexCount = 0;
     std::vector<Mesh> meshes;
 };
 

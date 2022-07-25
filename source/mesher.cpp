@@ -78,7 +78,7 @@ MesherAllocation meshChunk(chunk const &ch, std::array<chunk *, 6> const &sides)
 	std::array<std::vector<u16>, textureCount> isPerTexture;
 	
 	// -x, +x, -y, +y, -z, +z
-	std::array<std::array<std::array<u16, chunkSize+2>, chunkSize+2>, chunkSize+2> cch;// = {0};
+	std::array<std::array<std::array<u16, chunkSize+2>, chunkSize+2>, chunkSize+2> cch = {0};
 	for (int z = 0; z < chunkSize; ++z)
 		for (int y = 0; y < chunkSize; ++y)
 			for (int x = 0; x < chunkSize; ++x)

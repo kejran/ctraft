@@ -9,8 +9,7 @@
 
 #include "common.hpp"
 #include "mesher.hpp"
-//#include "simplex.hpp"
-#include "noise.hpp"
+#include "worker.hpp"
 
 #include "cursor_t3x.h"
 #include "dirt_t3x.h"
@@ -86,83 +85,7 @@ using WorldMap = std::unordered_map<s16vec3, ChunkMetadata, s16vec3::hash>;
 
 WorldMap world;
 
-u16 blockAt(int x, int y, int z) {
-	const float sc = 0.02f;
-	float noise = noise3d(0, x*sc, y*sc, z*sc)*4-z+chunkSize/2;
-	return noise > 0 ? 1 : noise > 0.5f ? 3 : 0;
-}
-
-ChunkMetadata &fillChunk(s16 cx, s16 cy, s16 cz) {
-	auto &meta = world[{cx, cy, cz}];
-	meta.data = new chunk();
-	int x = cx << chunkBits; int y = cy << chunkBits; int z = cz << chunkBits;
-
-	for (int lx = 0; lx < chunkSize; ++lx)
-		for (int ly = 0; ly < chunkSize; ++ly)
-			for (int lz = 0; lz < chunkSize; ++lz) {
-				int _x = x + lx; int _y = y + ly; int _z = z + lz;
-				u16 block = blockAt(_x, _y, _z); 
-				if (block == 1) { //  we are dirt, check one block up
-					u16 above = blockAt(_x, _y, _z + 1); 
-					if (above == 0)
-						block = 2;
-				}			
-				(*meta.data)[lz][ly][lx] = block;
-		}
-	return meta;
-}
-
-// todo: this will be async/queued on a separate thread later
-ChunkMetadata &getOrInitChunk(s16 x, s16 y, s16 z) {
-	auto it = world.find({x, y, z}); // todo could optimise it
-	if (it != world.end())
-		return it->second;
-	else 
-		return fillChunk(x, y, z);
-}
-
-ChunkMetadata *tryGetChunk(s16 x, s16 y, s16 z) {
-	auto it = world.find({x, y, z}); 
-	if (it != world.end())
-		return &it->second;
-	else 
-		return nullptr;
-}
-
-u16 tryGetBlock(int x, int y, int z) {
-	
-	auto *ch = tryGetChunk(x >> chunkBits, y >> chunkBits, z >> chunkBits);
-	if (ch != nullptr)
-		return (*ch->data)[z & chunkMask][y & chunkMask][x & chunkMask];
-	else
-		return 0xffff;
-}
-
-void initMeshVisuals(ChunkMetadata &meta, std::array<chunk *, 6> const &sides) {
-	if (meta.allocation.vertexCount)
-		freeMesh(meta.allocation);
-	meta.allocation = meshChunk(*meta.data, sides);
-	if (meta.allocation.vertexCount) {
-		BufInfo_Init(&meta.vertexBuffer);
-		BufInfo_Add(&meta.vertexBuffer, meta.allocation.vertices, sizeof(vertex), 4, 0x3210);
-	}
-	meta.meshed = true;
-}
-
-void initMeshVisuals(int x, int y, int z, bool force = false) {
-
-	auto &ch = getOrInitChunk(x, y, z);
-	if (ch.meshed && !force)
-		return;
-	initMeshVisuals(ch, std::array<chunk *, 6> {
-		getOrInitChunk(x-1, y, z).data,
-		getOrInitChunk(x+1, y, z).data,
-		getOrInitChunk(x, y-1, z).data,
-		getOrInitChunk(x, y+1, z).data,
-		getOrInitChunk(x, y, z-1).data,
-		getOrInitChunk(x, y, z+1).data
-	});
-}
+u16 tryGetBlock(int x, int y, int z);
 
 WorldMap::iterator destroyChunk(WorldMap::iterator it) {
 	delete it->second.data;
@@ -347,8 +270,9 @@ bool raycast(fvec3 eye, fvec3 dir, float maxLength, vec3<s32> &out, vec3<s32> &n
 	int steppedIndex = -1; 
 	float t_ = 0;
 
+	int i = 0; 
 	while (t_ <= maxLength) {
-
+		if (i++ > (1+maxLength)*3) return false; // the distance check is buggy... fix it later
 		// exit check
 		auto b = tryGetBlock(ix, iy, iz);
 		if (b == 0xffff) 
@@ -361,13 +285,6 @@ bool raycast(fvec3 eye, fvec3 dir, float maxLength, vec3<s32> &out, vec3<s32> &n
 			if (steppedIndex == 2) normal.z = (stepz < 0) ? 1 : -1;
 
 			return true;
-			// if (hit_norm) {
-			// 	hit_norm[0] = hit_norm[1] = hit_norm[2] = 0
-			// 	if (steppedIndex === 0) hit_norm[0] = -stepx
-			// 	if (steppedIndex === 1) hit_norm[1] = -stepy
-			// 	if (steppedIndex === 2) hit_norm[2] = -stepz
-			// }
-			//return b
 		}
 		
 		// advance t to next nearest voxel boundary
@@ -510,6 +427,67 @@ static void sceneInit(void)
 	BufInfo_Add(&focusBuffer, focusvbo, 4*3, 1, 0x0);
 }
 
+bool scheduleChunk(s16 x, s16 y, s16 z);
+
+ChunkMetadata *tryGetChunk(s16 x, s16 y, s16 z) {        
+	auto it = world.find({x, y, z}); 
+	if (it != world.end())
+		return &it->second;
+	else {
+		scheduleChunk(x, y, z); // todo: use this bool somehow
+		return nullptr;
+	}
+}
+
+u16 tryGetBlock(int x, int y, int z) {
+	
+	auto *ch = tryGetChunk(x >> chunkBits, y >> chunkBits, z >> chunkBits);
+	if (ch != nullptr)
+		return (*ch->data)[z & chunkMask][y & chunkMask][x & chunkMask];
+	else
+		return 0xffff;
+}
+
+void initMeshVisuals(ChunkMetadata &meta, std::array<chunk *, 6> const &sides) {
+	if (meta.allocation.vertexCount)
+		freeMesh(meta.allocation);
+	meta.allocation = meshChunk(*meta.data, sides);
+	if (meta.allocation.vertexCount) {
+		BufInfo_Init(&meta.vertexBuffer);
+		BufInfo_Add(&meta.vertexBuffer, meta.allocation.vertices, sizeof(vertex), 4, 0x3210);
+	}
+	meta.meshed = true;
+}
+
+// todo: this should not schedule
+bool initMeshVisuals(int x, int y, int z, bool force = false) {
+	auto *ch = tryGetChunk(x, y, z);
+	if (ch == nullptr || (ch->meshed && !force))
+		return false;
+
+	std::array<chunk *, 6> ns { nullptr };
+
+	auto _g = [&ns](int i, int _x, int _y, int _z) -> bool {
+		
+		if (_z < -1 || _z > 1)
+			return true; // todo: maybe this should happen elsewhere?
+		auto *m = tryGetChunk(_x, _y, _z);
+		if (m)
+			ns[i] = m->data;
+		return ns[i];
+	};
+
+	if (_g(0, x-1, y, z) && 
+		_g(1, x+1, y, z) &&
+		_g(2, x, y-1, z) &&
+		_g(3, x, y+1, z) &&
+		_g(4, x, y, z-1) &&
+		_g(5, x, y, z+1)
+	)
+		initMeshVisuals(*ch, ns);
+	return true;
+}
+
 vec3<s32> playerFocus;
 bool drawFocus = false;
 
@@ -533,8 +511,10 @@ void handlePlayer(float delta) {
 
 	// movement
 
-	float walkSpeed = (hidKeysDown() & KEY_B) ? 20 : 10;
-	float walkAcc = 50;
+	u32 kDown = hidKeysDown();
+
+	float walkSpeed = (kDown & KEY_B) ? 20 : 10;
+	float walkAcc = 100;
 
 	hidCircleRead(&cp);
 	float angleM = atan2f(cp.dx, cp.dy) + angleX;
@@ -564,8 +544,6 @@ void handlePlayer(float delta) {
 	}
 	player.velocity.x += vdx;
 	player.velocity.y += vdy;
-
-	u32 kDown = hidKeysDown();
 
 	if ((kDown & KEY_A) && player.velocity.z < 0.1f)
 		// todo raycast down
@@ -630,6 +608,48 @@ void handlePlayer(float delta) {
 		}
 		drawFocus = true;
 	}
+}
+
+constexpr int maxScheduledChunks = 8;
+std::vector<s16vec3> scheduledChunks;
+
+inline bool canProcessChunks() {
+	return scheduledChunks.size() < 8;
+}
+
+bool scheduleChunk(s16 x, s16 y, s16 z) {
+	if (!canProcessChunks()) 
+		return false;
+	s16vec3 idx {x, y, z};
+	for (auto &c: scheduledChunks)
+		if (c == idx)
+			return true;
+	scheduledChunks.push_back(idx);
+	
+	Task task;
+	task.chunkId.x = x; 
+	task.chunkId.y = y; 
+	task.chunkId.z = z;
+	task.type = Task::Type::GenerateChunk;
+	return postTask(task);
+}
+
+void processWorkerResults() {
+	TaskResult r;
+	while (getResult(r))
+		switch (r.type) {
+			case TaskResult::Type::ChunkData: {
+				s16vec3 idx = { r.chunk.x, r.chunk.y, r.chunk.z };
+				auto &meta = world[idx];
+				meta.data = r.chunk.data;
+				for (size_t i = 0; i < scheduledChunks.size(); ++i)
+					if (scheduledChunks[i] == idx) {
+						scheduledChunks[i] = scheduledChunks.back();
+						scheduledChunks.pop_back();
+					}
+			} break;
+			default: break;
+		}
 }
 
 static constexpr int distanceLoad = 3; // blocks to load, cage size 2n+1
@@ -703,7 +723,7 @@ void sceneRender(float iod) {
 	C3D_SetAttrInfo(&vertexLayouts.block);
 
 	for (auto [idx, meta]: world) 
-		if (meta.allocation.vertexCount) {
+		if (meta.meshed && meta.allocation.vertexCount) {
 			C3D_SetBufInfo(&meta.vertexBuffer);
 			C3D_FVUnifSet(
 				GPU_VERTEX_SHADER, 
@@ -785,6 +805,7 @@ void uiRender() {
 
 int main()
 {
+
 	// Initialize graphics
 	gfxInitDefault();
 	C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
@@ -799,6 +820,8 @@ int main()
 	// Initialize the scene
 	sceneInit();
 
+	startWorker();
+
 	u64 tick = svcGetSystemTick(); 
 	
 	player.pos.z = 12;
@@ -806,10 +829,11 @@ int main()
 	player.pos.y = 5;	
 
 	// Main loop
-	while (aptMainLoop())
-	{
+	while (aptMainLoop()) {
 
 		// do it before input and vsync wait
+		processWorkerResults();
+	
 		updateWorld(player.pos);
 
 		hidScanInput();
@@ -859,10 +883,10 @@ int main()
 		C3D_FrameEnd(0);
 	}
 
-	// Deinitialize the scene
 	sceneExit();
 
-	// Deinitialize graphics
+	stopWorker();
+
 	C3D_Fini();
 	gfxExit();
 	return 0;
