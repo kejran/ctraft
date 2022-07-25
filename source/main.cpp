@@ -1,5 +1,6 @@
 #include <3ds.h>
 #include <citro3d.h>
+#include <citro2d.h>
 #include <tex3ds.h>
 #include <string.h>
 #include <stdio.h>
@@ -11,6 +12,7 @@
 //#include "simplex.hpp"
 #include "noise.hpp"
 
+#include "cursor_t3x.h"
 #include "dirt_t3x.h"
 #include "grass_side_t3x.h"
 #include "grass_top_t3x.h"
@@ -27,8 +29,7 @@
 	GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO))
 
 static std::array<C3D_Tex, textureCount> textures;
-// dirt, grass s, grass t, stone 
-
+// cursor, dirt, grass s, grass t, stone
 
 struct {
 	struct {
@@ -339,9 +340,9 @@ bool raycast(fvec3 eye, fvec3 dir, float maxLength, vec3<s32> &out, vec3<s32> &n
 	float ydist = (stepy > 0) ? (iy + 1 - eye.y) : (eye.y - iy);
 	float zdist = (stepz > 0) ? (iz + 1 - eye.z) : (eye.z - iz);
 
-	float txMax = (txDelta < INFINITY) ? txDelta * xdist : INFINITY;
-	float tyMax = (tyDelta < INFINITY) ? tyDelta * ydist : INFINITY;
-	float tzMax = (tzDelta < INFINITY) ? tzDelta * zdist : INFINITY;
+	float txMax = (txDelta < 9999) ? txDelta * xdist : 9999;
+	float tyMax = (tyDelta < 9999) ? tyDelta * ydist : 9999;
+	float tzMax = (tzDelta < 9999) ? tzDelta * zdist : 9999;
 
 	int steppedIndex = -1; 
 	float t_ = 0;
@@ -353,7 +354,6 @@ bool raycast(fvec3 eye, fvec3 dir, float maxLength, vec3<s32> &out, vec3<s32> &n
 		if (b == 0xffff) 
 			return false;
 		if (b) {
-			
 			out.x = ix; out.y = iy; out.z = iz;
 			normal = {0, 0, 0};
 			if (steppedIndex == 0) normal.x = (stepx < 0) ? 1 : -1;
@@ -476,13 +476,15 @@ static void sceneInit(void)
 	AttrInfo_AddLoader(&vertexLayouts.focus, 0, GPU_FLOAT, 3); // v0=position
 
 	// todo optimize it with arrays or something
-	if (!loadTextureFromMem(&textures[0], nullptr, dirt_t3x, dirt_t3x_size))
+	if (!loadTextureFromMem(&textures[0], nullptr, cursor_t3x, cursor_t3x_size))
 		svcBreak(USERBREAK_PANIC);
-	if (!loadTextureFromMem(&textures[1], nullptr, grass_side_t3x, grass_side_t3x_size))
+	if (!loadTextureFromMem(&textures[1], nullptr, dirt_t3x, dirt_t3x_size))
 		svcBreak(USERBREAK_PANIC);
-	if (!loadTextureFromMem(&textures[2], nullptr, grass_top_t3x, grass_top_t3x_size))
+	if (!loadTextureFromMem(&textures[2], nullptr, grass_side_t3x, grass_side_t3x_size))
 		svcBreak(USERBREAK_PANIC);
-	if (!loadTextureFromMem(&textures[3], nullptr, stone_t3x, stone_t3x_size))
+	if (!loadTextureFromMem(&textures[3], nullptr, grass_top_t3x, grass_top_t3x_size))
+		svcBreak(USERBREAK_PANIC);
+	if (!loadTextureFromMem(&textures[4], nullptr, stone_t3x, stone_t3x_size))
 		svcBreak(USERBREAK_PANIC);
 		
 	for (auto &t: textures) {
@@ -709,7 +711,7 @@ void sceneRender(float iod) {
 				idx.x * chunkSize, idx.y * chunkSize, idx.z * chunkSize, 0.0f
 			);
 			for (auto &m: meta.allocation.meshes) {
-				C3D_TexBind(0, &textures[m.texture]);
+				C3D_TexBind(0, &textures[m.texture + 1]);
 				C3D_DrawElements(
 					GPU_TRIANGLES, 
 					m.count, 
@@ -764,11 +766,29 @@ void sceneExit(void)
 	DVLB_Free(shaders.block.dvlb);
 }
 
+void uiRender() {
+	C2D_Image image;
+	image.tex = &textures[0];
+	Tex3DS_SubTexture sub { 16, 16, 0, 0, 1, 1 };
+	image.subtex = &sub;
+	
+	C3D_AlphaBlend(
+		GPU_BLEND_ADD, GPU_BLEND_ADD, 
+		GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, 
+		GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA
+	);
+	int scale = 2;
+	C2D_Tint tint {0xaa'ff'ff'ff, 1.0f };
+	C2D_ImageTint it { { tint, tint, tint, tint } };
+	C2D_DrawImageAt(image, 200-scale*8, 120-scale*8, 1, &it, scale, scale);
+}
+
 int main()
 {
 	// Initialize graphics
 	gfxInitDefault();
 	C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
+	C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
 	consoleInit(GFX_BOTTOM, NULL);
 
 	C3D_RenderTarget* targetLeft  = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
@@ -820,15 +840,20 @@ int main()
 		{
 			C3D_RenderTargetClear(targetLeft, C3D_CLEAR_ALL, CLEAR_COLOR, 0);
 			C3D_FrameDrawOn(targetLeft);
-			// C2D_SceneTarget(targetLeft);
+			C2D_SceneTarget(targetLeft);
 			sceneRender(-iod);
-
+			C2D_Prepare();
+			uiRender();
+			C2D_Flush();
 			if (should3d)
 			{
 				C3D_RenderTargetClear(targetRight, C3D_CLEAR_ALL, CLEAR_COLOR, 0);
 				C3D_FrameDrawOn(targetRight);
-				// C2D_SceneTarget(targetRight);
+				C2D_SceneTarget(targetRight);
 				sceneRender(iod);
+				C2D_Prepare();
+				uiRender();
+				C2D_Flush();
 			}
 		}
 		C3D_FrameEnd(0);
