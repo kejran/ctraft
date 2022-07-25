@@ -296,7 +296,7 @@ void moveAndCollide(fvec3 &position, fvec3 &velocity, float delta, float radius,
 }
 
 // https://github.com/fenomas/fast-voxel-raycast/blob/master/index.js
-bool raycast(fvec3 eye, fvec3 dir, float maxLength, vec3<s32> &out) {
+bool raycast(fvec3 eye, fvec3 dir, float maxLength, vec3<s32> &out, vec3<s32> &normal) {
 	float norm = 1 / sqrtf(dir.x*dir.x*+dir.y*dir.y+dir.z*dir.z);
 	dir.x *= norm; dir.y *= norm; dir.z *= norm;
 
@@ -315,7 +315,6 @@ bool raycast(fvec3 eye, fvec3 dir, float maxLength, vec3<s32> &out) {
 
 	int steppedIndex = -1; 
 	float t_ = 0;
-//			printf("%i, %i, %i\n", ix, iy, iz);
 
 	while (t_ <= maxLength) {
 
@@ -326,12 +325,12 @@ bool raycast(fvec3 eye, fvec3 dir, float maxLength, vec3<s32> &out) {
 		if (b) {
 			
 			out.x = ix; out.y = iy; out.z = iz;
+			normal = {0, 0, 0};
+			if (steppedIndex == 0) normal.x = (stepx < 0) ? 1 : -1;
+			if (steppedIndex == 1) normal.y = (stepy < 0) ? 1 : -1;
+			if (steppedIndex == 2) normal.z = (stepz < 0) ? 1 : -1;
+
 			return true;
-			// if (hit_pos) {
-			// 	hit_pos[0] = px + t * dx
-			// 	hit_pos[1] = py + t * dy
-			// 	hit_pos[2] = pz + t * dz
-			// }
 			// if (hit_norm) {
 			// 	hit_norm[0] = hit_norm[1] = hit_norm[2] = 0
 			// 	if (steppedIndex === 0) hit_norm[0] = -stepx
@@ -425,6 +424,9 @@ static void sceneInit(void)
 	C3D_TexEnvFunc(env, C3D_Both, GPU_MODULATE);
 }
 
+vec3<s32> playerFocus;
+bool drawFocus = false;
+
 void handlePlayer(float delta) {
 
 	// rotation
@@ -491,13 +493,57 @@ void handlePlayer(float delta) {
 	
 	moveAndCollide(player.pos, player.velocity, delta, 0.4f, 2);	
 
-	vec3<s32> rayHit;
 	fvec3 dir {sinf(angleX) * cosf(angleY), cosf(angleX) * cosf(angleY), -sinf(angleY)};
-	bool hit = raycast(
+	drawFocus = false;
+	vec3<s32> normal;
+	if (raycast(
 		{player.pos.x, player.pos.y, player.pos.z + 1.5f}, 
-		dir,
-		3, rayHit);
-	//	printf(hit ? "hit\n" : "no hit\n");
+		dir, 3, playerFocus, normal)
+	) {
+		if (kDown & KEY_Y) {
+			int nx = playerFocus.x + normal.x;
+			int ny = playerFocus.y + normal.y;
+			int nz = playerFocus.z + normal.z;
+			
+			auto *ch = tryGetChunk(
+				nx >> chunkBits, 
+				ny >> chunkBits, 
+				nz >> chunkBits
+			);
+			if (ch) {
+				(*ch->data)[nz & chunkMask][ny & chunkMask][nx & chunkMask] = 3; 
+				initMeshVisuals(
+					nx >> chunkBits, 
+					ny >> chunkBits, 
+					nz >> chunkBits, 
+					true
+				);
+				// todo use selected block
+			}
+		}
+		if (kDown & KEY_X) {
+			int nx = playerFocus.x;
+			int ny = playerFocus.y;
+			int nz = playerFocus.z;
+			
+			auto *ch = tryGetChunk(
+				nx >> chunkBits, 
+				ny >> chunkBits, 
+				nz >> chunkBits
+			);
+			if (ch) {
+				(*ch->data)[nz & chunkMask][ny & chunkMask][nx & chunkMask] = 0; 
+				initMeshVisuals(
+					nx >> chunkBits, 
+					ny >> chunkBits, 
+					nz >> chunkBits, 
+					true
+				);
+				// todo use selected block
+			}
+		}
+		drawFocus = true;
+	}
 }
 
 static constexpr int distanceLoad = 3; // blocks to load, cage size 2n+1
