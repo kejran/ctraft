@@ -71,45 +71,12 @@ inline int _rev(int uv, int dir) {
 
 // todo handle allocation errors
 
-MesherAllocation meshChunk(chunk const &ch, std::array<chunk *, 6> const &sides) {
+MesherAllocation meshChunk(expandedChunk const &cch) {
 	std::vector<vertex> vertices;
 	std::array<u16, (chunkSize+1) * (chunkSize+1)> vertexCache;
 	std::vector<u16> indicesFlat;
 	std::array<std::vector<u16>, textureCount> isPerTexture;
 	
-	// -x, +x, -y, +y, -z, +z
-	std::array<std::array<std::array<u16, chunkSize+2>, chunkSize+2>, chunkSize+2> cch = {0};
-	for (int z = 0; z < chunkSize; ++z)
-		for (int y = 0; y < chunkSize; ++y)
-			for (int x = 0; x < chunkSize; ++x)
-				cch[z + 1][y + 1][x + 1] = ch[z][y][x];  
-
-	// organise this somehow...
-	if (sides[0]) // -x
-		for (int z = 0; z < chunkSize; ++z)
-			for (int y = 0; y < chunkSize; ++y)
-				cch[z + 1][y + 1][0] = (*sides[0])[z][y][chunkSize-1];
-	if (sides[1]) // +x
-		for (int z = 0; z < chunkSize; ++z)
-			for (int y = 0; y < chunkSize; ++y)
-				cch[z + 1][y + 1][chunkSize+1] = (*sides[1])[z][y][0];
-	if (sides[2]) // -y
-		for (int z = 0; z < chunkSize; ++z)
-			for (int x = 0; x < chunkSize; ++x)
-				cch[z + 1][0][x + 1] = (*sides[2])[z][chunkSize-1][x];
-	if (sides[3]) // +y
-		for (int z = 0; z < chunkSize; ++z)
-			for (int x = 0; x < chunkSize; ++x)
-				cch[z + 1][chunkSize+1][x + 1] = (*sides[3])[z][0][x];
-	if (sides[4]) // -z
-		for (int y = 0; y < chunkSize; ++y)
-			for (int x = 0; x < chunkSize; ++x)
-				cch[0][y + 1][x + 1] = (*sides[4])[chunkSize-1][y][x];
-	if (sides[5]) // -z
-		for (int y = 0; y < chunkSize; ++y)
-			for (int x = 0; x < chunkSize; ++x)
-				cch[chunkSize+1][y + 1][x + 1] = (*sides[5])[0][y][x];
-
 	// todo refactor this using templates + lambda accessor for each side  
 
 	for (int s = 0; s < 6; ++s) { // side
@@ -149,7 +116,7 @@ MesherAllocation meshChunk(chunk const &ch, std::array<chunk *, 6> const &sides)
 					u8 y = ly + uy + vy;
 					u8 z = lz + uz + vz;
 					
-					u16 self = ch[z][y][x];
+					u16 self = cch[z+1][y+1][x+1];
 					bool draw = self > 0;
 					if (draw) {
 						// neighbouring block of this face
@@ -237,16 +204,12 @@ MesherAllocation meshChunk(chunk const &ch, std::array<chunk *, 6> const &sides)
 
 	MesherAllocation result;
 
-	u16 totalIdxCount = 0;
-	
 	for (int i = 0; i < textureCount; ++i) {
 		auto &m = isPerTexture[i];
 		if (m.size()) {
 			MesherAllocation::Mesh mm;
 			mm.texture = i;
 			mm.count = m.size();
-			mm.start = totalIdxCount;
-			totalIdxCount += m.size();
 			for (auto i: m)
 				indicesFlat.push_back(i);
 			result.meshes.push_back(mm);
@@ -279,6 +242,50 @@ MesherAllocation meshChunk(chunk const &ch, std::array<chunk *, 6> const &sides)
 
 	return result;
 }
+
+MesherAllocation meshChunk(chunk const &ch, std::array<chunk *, 6> const &sides) {
+	
+	// -x, +x, -y, +y, -z, +z
+	expandedChunk cch = {0};
+	expandChunk(ch, sides, cch);
+	return meshChunk(cch);
+}
+
+void expandChunk(chunk const &ch, std::array<chunk *, 6> const &sides, expandedChunk &ex) {
+
+	for (int z = 0; z < chunkSize; ++z)
+		for (int y = 0; y < chunkSize; ++y)
+			for (int x = 0; x < chunkSize; ++x)
+				ex[z + 1][y + 1][x + 1] = ch[z][y][x];  
+
+	// organise this somehow...
+	if (sides[0]) // -x
+		for (int z = 0; z < chunkSize; ++z)
+			for (int y = 0; y < chunkSize; ++y)
+				ex[z + 1][y + 1][0] = (*sides[0])[z][y][chunkSize-1];
+	if (sides[1]) // +x
+		for (int z = 0; z < chunkSize; ++z)
+			for (int y = 0; y < chunkSize; ++y)
+				ex[z + 1][y + 1][chunkSize+1] = (*sides[1])[z][y][0];
+	if (sides[2]) // -y
+		for (int z = 0; z < chunkSize; ++z)
+			for (int x = 0; x < chunkSize; ++x)
+				ex[z + 1][0][x + 1] = (*sides[2])[z][chunkSize-1][x];
+	if (sides[3]) // +y
+		for (int z = 0; z < chunkSize; ++z)
+			for (int x = 0; x < chunkSize; ++x)
+				ex[z + 1][chunkSize+1][x + 1] = (*sides[3])[z][0][x];
+	if (sides[4]) // -z
+		for (int y = 0; y < chunkSize; ++y)
+			for (int x = 0; x < chunkSize; ++x)
+				ex[0][y + 1][x + 1] = (*sides[4])[chunkSize-1][y][x];
+	if (sides[5]) // -z
+		for (int y = 0; y < chunkSize; ++y)
+			for (int x = 0; x < chunkSize; ++x)
+				ex[chunkSize+1][y + 1][x + 1] = (*sides[5])[0][y][x];
+
+}
+
 
 void freeMesh(MesherAllocation &alloc) {
 	if (alloc.vertices)

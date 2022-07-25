@@ -1,6 +1,7 @@
 #include "worker.hpp"
 
 #include "worldgen.hpp"
+#include "mesher.hpp"
 
 namespace {
     
@@ -36,16 +37,35 @@ namespace {
 
 bool postResult(TaskResult result);
 void processTask(Task &t) {	
+
+    TaskResult r;
+
     switch (t.type) {
-        case Task::Type::Dummy:
-            svcSleepThread(1);
+
+        // todo: we might end up with symmetrical enums, monitor it
         case Task::Type::GenerateChunk:
-            TaskResult r;
             r.type = TaskResult::Type::ChunkData;
-            r.chunk.data = generateChunk(t.chunkId.x, t.chunkId.y, t.chunkId.z);
-            r.chunk.x = t.chunkId.x; r.chunk.y = t.chunkId.y; r.chunk.z = t.chunkId.z;
+            r.chunk.data = generateChunk(t.chunk.x, t.chunk.y, t.chunk.z);
+            r.chunk.x = t.chunk.x; r.chunk.y = t.chunk.y; r.chunk.z = t.chunk.z;
             postResult(r);
-        break;
+            break;
+        
+        case Task::Type::MeshChunk:
+            r.type = TaskResult::Type::ChunkMesh;
+            // todo make these allocs saner
+            r.chunk.alloc = new MesherAllocation;
+            *r.chunk.alloc = meshChunk(*t.chunk.exdata);
+            delete t.chunk.exdata;
+            r.chunk.x = t.chunk.x; r.chunk.y = t.chunk.y; r.chunk.z = t.chunk.z;
+            postResult(r);
+            break;
+    
+        case Task::Type::Tag: 
+            r.type = TaskResult::Type::Tag;
+            r.value = t.value;
+            postResult(r);
+            break;
+
         default: break;
     }    
 }
@@ -61,6 +81,7 @@ void workerMain(void *arg) {
             --tasks.count;
             LightLock_Unlock(&tasks.lock);
             processTask(task);
+            svcSleepThread(1);
             LightLock_Lock(&tasks.lock);
         } else
             CondVar_Wait(&signalNewTask, &tasks.lock);

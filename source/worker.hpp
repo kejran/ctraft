@@ -1,30 +1,38 @@
 #pragma once
 #include "common.hpp"
 
+#include "mesher.hpp"
+
 struct Task {
     enum class Type {
-        Dummy,
         GenerateChunk,
+        MeshChunk,
+        Tag,
     };
     union {
         void *ptr;
         u32 value;
         struct {
+            expandedChunk *exdata;
             s16 x, y, z;
-        } chunkId;
+        } chunk;
     };
     Type type;
 };
 
 struct TaskResult {
     enum class Type {
-        Dummy,
         ChunkData,
+        ChunkMesh,
+        Tag,
     };
     union {
-        void *ptr;
+        u32 value;
         struct {
-            chunk *data;
+            union {
+                chunk *data;
+                MesherAllocation *alloc;
+            };
             s16 x, y, z;
         } chunk;
     };

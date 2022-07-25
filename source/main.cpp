@@ -460,6 +460,7 @@ void initMeshVisuals(ChunkMetadata &meta, std::array<chunk *, 6> const &sides) {
 }
 
 // todo: this should not schedule
+// todo: maybe just name it better...
 bool initMeshVisuals(int x, int y, int z, bool force = false) {
 	auto *ch = tryGetChunk(x, y, z);
 	if (ch == nullptr || (ch->meshed && !force))
@@ -610,11 +611,39 @@ void handlePlayer(float delta) {
 	}
 }
 
+constexpr int maxScheduledMeshes = 8;
+std::vector<s16vec3> scheduledMeshes;
+
+inline bool canProcessMeshes() {
+	return scheduledMeshes.size() < maxScheduledMeshes;
+}
+// std::array<expandedChunk, maxScheduledMeshes> exChunkCache;
+// std::array<u8, maxScheduledMeshes> exChVectorToCache;
+
+bool scheduleMesh(s16 x, s16 y, s16 z) {
+	if (!canProcessMeshes()) 
+		return false;
+	s16vec3 idx {x, y, z};
+	for (auto &c: scheduledMeshes)
+		if (c == idx)
+			return true;
+	scheduledMeshes.push_back(idx);
+	
+	Task task;
+	task.chunk.x = x; 
+	task.chunk.y = y; 
+	task.chunk.z = z;
+	task.chunk.exdata = new expandedChunk(); // todo cache it 
+	task.type = Task::Type::MeshChunk;
+	return postTask(task);
+}
+
+
 constexpr int maxScheduledChunks = 8;
 std::vector<s16vec3> scheduledChunks;
 
 inline bool canProcessChunks() {
-	return scheduledChunks.size() < 8;
+	return scheduledChunks.size() < maxScheduledChunks;
 }
 
 bool scheduleChunk(s16 x, s16 y, s16 z) {
@@ -627,9 +656,9 @@ bool scheduleChunk(s16 x, s16 y, s16 z) {
 	scheduledChunks.push_back(idx);
 	
 	Task task;
-	task.chunkId.x = x; 
-	task.chunkId.y = y; 
-	task.chunkId.z = z;
+	task.chunk.x = x; 
+	task.chunk.y = y; 
+	task.chunk.z = z;
 	task.type = Task::Type::GenerateChunk;
 	return postTask(task);
 }
@@ -642,6 +671,17 @@ void processWorkerResults() {
 				s16vec3 idx = { r.chunk.x, r.chunk.y, r.chunk.z };
 				auto &meta = world[idx];
 				meta.data = r.chunk.data;
+				for (size_t i = 0; i < scheduledChunks.size(); ++i)
+					if (scheduledChunks[i] == idx) {
+						scheduledChunks[i] = scheduledChunks.back();
+						scheduledChunks.pop_back();
+					}
+			} break;
+			case TaskResult::Type::ChunkMesh: {
+				s16vec3 idx = { r.chunk.x, r.chunk.y, r.chunk.z };
+				auto &meta = world[idx];
+				meta.allocation = std::move(*r.chunk.alloc);
+				delete r.chunk.alloc;
 				for (size_t i = 0; i < scheduledChunks.size(); ++i)
 					if (scheduledChunks[i] == idx) {
 						scheduledChunks[i] = scheduledChunks.back();
@@ -730,14 +770,16 @@ void sceneRender(float iod) {
 				shaders.block.locs.chunkPos,     
 				idx.x * chunkSize, idx.y * chunkSize, idx.z * chunkSize, 0.0f
 			);
+			u16 offset = 0;
 			for (auto &m: meta.allocation.meshes) {
 				C3D_TexBind(0, &textures[m.texture + 1]);
 				C3D_DrawElements(
 					GPU_TRIANGLES, 
 					m.count, 
 					C3D_UNSIGNED_SHORT, 
-					(u16*)meta.allocation.indices + m.start
+					(u16*)meta.allocation.indices + offset
 				);
+				offset += m.count;
 			}
 		}
 
