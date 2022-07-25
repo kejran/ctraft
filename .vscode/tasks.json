@@ -50,7 +50,27 @@
                 "isDefault": true
             },
             "problemMatcher": []
-        }//,
+        },
+        {
+            "label": "run debug",
+            "type": "shell",
+            "isBackground": true,
+            "command": "C:/Users/kejran/AppData/Local/Citra/nightly-mingw/citra-qt.exe",
+            "args": [
+                "${workspaceFolder}/${workspaceFolderBasename}.3dsx"
+            ],
+            "dependsOn": ["make debug"],
+            "presentation": {
+                "clear": true,
+                "reveal": "always"
+            },
+            "group": {
+                "kind": "test",
+                "isDefault": true
+            },
+            "problemMatcher": []
+        }
+        //,
         // {
         //     "label": "gdb-debug",
         //     "type": "shell",
