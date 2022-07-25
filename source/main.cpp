@@ -2,8 +2,9 @@
 #include <citro3d.h>
 #include <tex3ds.h>
 #include <string.h>
-#include "vshader_shbin.h"
 #include <stdio.h>
+#include <cmath>
+#include <cassert>
 
 #include "common.hpp"
 #include "mesher.hpp"
@@ -15,8 +16,8 @@
 #include "grass_top_t3x.h"
 #include "stone_t3x.h"
 
-#include <cmath>
-#include <cassert>
+#include "terrain_shbin.h"
+#include "focus_shbin.h"
 
 #define CLEAR_COLOR 0x68B0D8FF
 
@@ -28,10 +29,39 @@
 static std::array<C3D_Tex, textureCount> textures;
 // dirt, grass s, grass t, stone 
 
-static DVLB_s* vshader_dvlb;
-static shaderProgram_s program;
-static int uLoc_projection, uLoc_modelView;
-static int uLoc_lightVec, uLoc_lightClr, uLoc_material, uLoc_chunkPos;
+
+struct {
+	struct {
+		DVLB_s* dvlb;
+		shaderProgram_s program;
+		struct {
+			int projection, modelView;
+			int lightVec, lightClr, material, chunkPos;
+		} locs;
+	} block;
+	struct {
+		DVLB_s* dvlb;
+		shaderProgram_s program;
+		struct {
+			int projection, modelView, blockPos;
+		} locs;
+	} focus;
+} shaders;
+
+struct {
+	C3D_AttrInfo block;
+	C3D_AttrInfo focus;
+} vertexLayouts;
+
+struct 
+{
+	C3D_TexEnv block;
+	C3D_TexEnv focus;
+} texEnvs;
+
+void *focusvbo;
+C3D_BufInfo focusBuffer;
+
 static C3D_Mtx projection;
 static C3D_Mtx material =
 {
@@ -374,31 +404,76 @@ bool raycast(fvec3 eye, fvec3 dir, float maxLength, vec3<s32> &out, vec3<s32> &n
 	return false;
 }
 
+static const fvec3 focusVtx[] = {
+	{-0.01f, -0.01f, -0.01f},
+	{+1.01f, -0.01f, -0.01f},
+	{+1.01f, +1.01f, -0.01f},
+	{-0.01f, +1.01f, -0.01f},
+	{-0.01f, -0.01f, +1.01f},
+	{+1.01f, -0.01f, +1.01f},
+	{+1.01f, +1.01f, +1.01f},
+	{-0.01f, +1.01f, +1.01f}
+};
+
+static const uint8_t basicCubeIs[] = {
+	// -X
+	3, 0, 4, 3, 4, 7,
+	// +X
+	1, 2, 6, 1, 6, 5,
+	// -Y
+	0, 1, 5, 0, 5, 4,
+	// +Y
+	2, 3, 7, 2, 7, 6,
+	// -Z
+	1, 0, 3, 1, 3, 2,
+	// +Z
+	4, 5, 6, 4, 6, 7,
+};
+
 static void sceneInit(void)
 {
-	// Load the vertex shader, create a shader program and bind it
-	vshader_dvlb = DVLB_ParseFile((u32*)vshader_shbin, vshader_shbin_size);
-	shaderProgramInit(&program);
-	shaderProgramSetVsh(&program, &vshader_dvlb->DVLE[0]);
-	C3D_BindProgram(&program);
+	shaders.block.dvlb = DVLB_ParseFile((u32*)terrain_shbin, terrain_shbin_size);
+	shaderProgramInit(&shaders.block.program);
+	shaderProgramSetVsh(&shaders.block.program, &shaders.block.dvlb->DVLE[0]);
+	C3D_BindProgram(&shaders.block.program);
 
 	// Get the location of the uniforms
-	uLoc_projection   = shaderInstanceGetUniformLocation(program.vertexShader, "projection");
-	uLoc_modelView    = shaderInstanceGetUniformLocation(program.vertexShader, "modelView");
-	uLoc_lightVec     = shaderInstanceGetUniformLocation(program.vertexShader, "lightVec");
-	uLoc_lightClr     = shaderInstanceGetUniformLocation(program.vertexShader, "lightClr");
-	uLoc_material     = shaderInstanceGetUniformLocation(program.vertexShader, "material");
-	uLoc_chunkPos     = shaderInstanceGetUniformLocation(program.vertexShader, "chunkPos");
+	shaders.block.locs.projection = 
+		shaderInstanceGetUniformLocation(shaders.block.program.vertexShader, "projection");
+	shaders.block.locs.modelView = 
+		shaderInstanceGetUniformLocation(shaders.block.program.vertexShader, "modelView");
+	shaders.block.locs.lightVec = 
+		shaderInstanceGetUniformLocation(shaders.block.program.vertexShader, "lightVec");
+	shaders.block.locs.lightClr = 
+		shaderInstanceGetUniformLocation(shaders.block.program.vertexShader, "lightClr");
+	shaders.block.locs.material = 
+		shaderInstanceGetUniformLocation(shaders.block.program.vertexShader, "material");
+	shaders.block.locs.chunkPos = 
+		shaderInstanceGetUniformLocation(shaders.block.program.vertexShader, "chunkPos");
+
+	shaders.focus.dvlb = DVLB_ParseFile((u32*)focus_shbin, focus_shbin_size);
+	shaderProgramInit(&shaders.focus.program);
+	shaderProgramSetVsh(&shaders.focus.program, &shaders.focus.dvlb->DVLE[0]);
+	C3D_BindProgram(&shaders.focus.program);
+
+	// Get the location of the uniforms
+	shaders.focus.locs.projection = 
+		shaderInstanceGetUniformLocation(shaders.focus.program.vertexShader, "projection");
+	shaders.focus.locs.modelView = 
+		shaderInstanceGetUniformLocation(shaders.focus.program.vertexShader, "modelView");
+	shaders.focus.locs.blockPos = 
+		shaderInstanceGetUniformLocation(shaders.focus.program.vertexShader, "blockPos");
+		
 
 	// Configure attributes for use with the vertex shader
-	C3D_AttrInfo* attrInfo = C3D_GetAttrInfo();
-	AttrInfo_Init(attrInfo);
-	AttrInfo_AddLoader(attrInfo, 0, GPU_UNSIGNED_BYTE, 3); // v0=position
-	AttrInfo_AddLoader(attrInfo, 1, GPU_UNSIGNED_BYTE, 2); // v1=texcoord
-	AttrInfo_AddLoader(attrInfo, 2, GPU_BYTE, 3); // v2=normal
-	AttrInfo_AddLoader(attrInfo, 3, GPU_UNSIGNED_BYTE, 1); // v3=ao
+	AttrInfo_Init(&vertexLayouts.block);
+	AttrInfo_AddLoader(&vertexLayouts.block, 0, GPU_UNSIGNED_BYTE, 3); // v0=position
+	AttrInfo_AddLoader(&vertexLayouts.block, 1, GPU_UNSIGNED_BYTE, 2); // v1=texcoord
+	AttrInfo_AddLoader(&vertexLayouts.block, 2, GPU_BYTE, 3); // v2=normal
+	AttrInfo_AddLoader(&vertexLayouts.block, 3, GPU_UNSIGNED_BYTE, 1); // v3=ao
 			
-	// Load the texture and bind it to the first texture unit
+	AttrInfo_Init(&vertexLayouts.focus);
+	AttrInfo_AddLoader(&vertexLayouts.focus, 0, GPU_FLOAT, 3); // v0=position
 
 	// todo optimize it with arrays or something
 	if (!loadTextureFromMem(&textures[0], nullptr, dirt_t3x, dirt_t3x_size))
@@ -418,10 +493,19 @@ static void sceneInit(void)
 	// Configure the first fragment shading substage to blend the texture color with
 	// the vertex color (calculated by the vertex shader using a lighting algorithm)
 	// See https://www.opengl.org/sdk/docs/man2/xhtml/glTexEnv.xml for more insight
-	C3D_TexEnv* env = C3D_GetTexEnv(0);
-	C3D_TexEnvInit(env);
-	C3D_TexEnvSrc(env, C3D_Both, GPU_TEXTURE0, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
-	C3D_TexEnvFunc(env, C3D_Both, GPU_MODULATE);
+	C3D_TexEnvInit(&texEnvs.block);
+	C3D_TexEnvSrc(&texEnvs.block, C3D_Both, GPU_TEXTURE0, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
+	C3D_TexEnvFunc(&texEnvs.block, C3D_Both, GPU_MODULATE);
+
+	C3D_TexEnvInit(&texEnvs.focus);
+	C3D_TexEnvSrc(&texEnvs.focus, C3D_Both, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
+	C3D_TexEnvFunc(&texEnvs.focus, C3D_Both, GPU_REPLACE);
+
+	focusvbo = linearAlloc(3*4*8 + 2*3*6);
+	memcpy(focusvbo, focusVtx, 4*3*8);
+	memcpy((u8*)focusvbo + 4*3*8, basicCubeIs, 2*3*6);
+	BufInfo_Init(&focusBuffer);
+	BufInfo_Add(&focusBuffer, focusvbo, 4*3, 1, 0x0);
 }
 
 vec3<s32> playerFocus;
@@ -483,13 +567,13 @@ void handlePlayer(float delta) {
 
 	if ((kDown & KEY_A) && player.velocity.z < 0.1f)
 		// todo raycast down
-		player.velocity.z = 3*4.8f; // adjust until it feels ok
+		player.velocity.z = 4.8f; // adjust until it feels ok
 	else
 		player.velocity.z -= 9.81f * delta;
 	
 	// velocity > 20 will break 1-iteration collision
-	if (player.velocity.z < -10) 
-		player.velocity.z = -10;
+	if (player.velocity.z < -15) 
+		player.velocity.z = -15;
 	
 	moveAndCollide(player.pos, player.velocity, delta, 0.4f, 2);	
 
@@ -580,7 +664,10 @@ void updateWorld(fvec3 focus) {
 
 void sceneRender(float iod) {
 
-	// Calculate the modelView matrix
+	/// --- CALCULATE VIEW --- ///
+
+	// todo: we can probably merge view and projection into one
+
 	C3D_Mtx modelView;
 	Mtx_Identity(&modelView);
 
@@ -594,21 +681,31 @@ void sceneRender(float iod) {
 
 	Mtx_PerspStereoTilt(&projection, C3D_AngleFromDegrees(40.0f), C3D_AspectRatioTop, 0.1f, 100, iod, 2.0f, false);
 
-	// Update the uniforms
-	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLoc_projection, &projection);
-	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLoc_modelView,  &modelView);
-	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, uLoc_material,   &material);
-	C3D_FVUnifSet(GPU_VERTEX_SHADER, uLoc_lightVec,     0.0f, 0.6f, -0.8f, 0.0f);
-	// C3D_FVUnifSet(GPU_VERTEX_SHADER, uLoc_lightHalfVec, 0.0f, 0.0f, -1.0f, 0.0f);
-	C3D_FVUnifSet(GPU_VERTEX_SHADER, uLoc_lightClr,     1.0f, 1.0f,  1.0f, 1.0f);
+	/// --- DRAW BLOCKS --- ///
 
-	// Draw the VBO
+	C3D_SetTexEnv(0, &texEnvs.block);
+	C3D_AlphaBlend(
+		GPU_BLEND_ADD, GPU_BLEND_ADD, 
+		GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, 
+		GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA
+	);
+	C3D_BindProgram(&shaders.block.program);
+
+	// Update the uniforms
+	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaders.block.locs.projection, &projection);
+	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaders.block.locs.modelView,  &modelView);
+	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaders.block.locs.material,   &material);
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, shaders.block.locs.lightVec,     0.0f, 0.6f, -0.8f, 0.0f);
+	C3D_FVUnifSet(GPU_VERTEX_SHADER, shaders.block.locs.lightClr,     1.0f, 1.0f,  1.0f, 1.0f);
+
+	C3D_SetAttrInfo(&vertexLayouts.block);
+
 	for (auto [idx, meta]: world) 
 		if (meta.allocation.vertexCount) {
 			C3D_SetBufInfo(&meta.vertexBuffer);
 			C3D_FVUnifSet(
 				GPU_VERTEX_SHADER, 
-				uLoc_chunkPos,     
+				shaders.block.locs.chunkPos,     
 				idx.x * chunkSize, idx.y * chunkSize, idx.z * chunkSize, 0.0f
 			);
 			for (auto &m: meta.allocation.meshes) {
@@ -621,6 +718,32 @@ void sceneRender(float iod) {
 				);
 			}
 		}
+
+	if (drawFocus) {
+		C3D_SetTexEnv(0, &texEnvs.focus);
+		C3D_AlphaBlend(
+			GPU_BLEND_ADD, GPU_BLEND_ADD,
+			GPU_SRC_ALPHA, GPU_ONE, 
+			GPU_SRC_ALPHA, GPU_ONE
+		);
+		C3D_BindProgram(&shaders.focus.program);
+
+		// Update the uniforms
+		C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaders.focus.locs.projection, &projection);
+		C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaders.focus.locs.modelView,  &modelView);
+		C3D_FVUnifSet(GPU_VERTEX_SHADER, shaders.focus.locs.blockPos, 
+			playerFocus.x, playerFocus.y, playerFocus.z, 0.0f
+		);
+
+		C3D_SetAttrInfo(&vertexLayouts.focus);
+		C3D_SetBufInfo(&focusBuffer);
+		C3D_DrawElements(
+			GPU_TRIANGLES, 
+			2*3*6, 
+			C3D_UNSIGNED_BYTE, 
+			(u8*)focusvbo + 3*4*8
+		);
+	}
 }
 
 void sceneExit(void)
@@ -637,8 +760,8 @@ void sceneExit(void)
 			freeMesh(meta.allocation);
 
 	// Free the shader program
-	shaderProgramFree(&program);
-	DVLB_Free(vshader_dvlb);
+	shaderProgramFree(&shaders.block.program);
+	DVLB_Free(shaders.block.dvlb);
 }
 
 int main()

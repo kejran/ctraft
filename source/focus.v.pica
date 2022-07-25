@@ -1,0 +1,67 @@
+.fvec projection[4], modelView[4]
+.fvec blockPos
+
+.constf myconst(0.0, 1.0, -1.0, 0.25)
+
+.alias  zeros myconst.xxxx ; Vector full of zeros
+.alias  ones  myconst.yyyy ; Vector full of ones
+.alias  col myconst.yyyw ; Vector full of ones
+
+.out outpos position
+.out outclr color
+
+.alias inpos v0
+
+.proc main
+	; Force the w component of inpos to be 1.0
+	;mov r0.xyz, inpos
+	add r0, blockPos, inpos
+	mov r0.w,   ones
+
+	; r1 = modelView * inpos
+	dp4 r1.x, modelView[0], r0
+	dp4 r1.y, modelView[1], r0
+	dp4 r1.z, modelView[2], r0
+	dp4 r1.w, modelView[3], r0
+
+	; outpos = projection * r1
+	dp4 outpos.x, projection[0], r1
+	dp4 outpos.y, projection[1], r1
+	dp4 outpos.z, projection[2], r1
+	dp4 outpos.w, projection[3], r1
+
+	; mov r1.xyz, innrm
+
+	; Calculate the diffuse level (r0.x)
+	; r0.x = max(0, -(lightVec * r1))
+	; r0.y = max(0, (-lightHalfVec[i]) * r1) ^ 2
+	; dp3 r0.x, lightVec,      r1
+	; add r0.x, zeros,         -r0
+	;dp3 r0.y, -lightHalfVec, r1
+	; max r0,   zeros,         r0
+	;mul r0.y, r0,            r0
+
+	; Accumulate the vertex color in r1, initializing it to the emission color
+	;mov r1, mat_emi
+
+	; r1 += specularColor * lightClr * shininessLevel
+	;mul r2, lightClr, r0.yyyy
+	;mad r1, r2, mat_spe, r1
+
+	; mov r1, zeros
+	; mov r1.w, ones
+	; r1 += diffuseColor * lightClr * diffuseLevel
+	; mul r2, lightClr, r0.xxxx
+	; mad r1, r2, mat_dif, r1
+
+	; r1 += ambientColor * lightClr
+	; mul r2, myconst2.yyyy, inao.xxxx 
+	; mad r1, r2, mat_amb, r1
+
+	; outclr = clamp r1 to [0,1]
+	; min outclr, ones, r1
+
+	mov outclr, col
+	; We're finished
+	end
+.end
