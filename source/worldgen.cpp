@@ -5,7 +5,7 @@
 u16 blockAt(int x, int y, int z) {
 	const float sc = 0.02f;
 	float noise = noise3d(0, x*sc, y*sc, z*sc)*4-z+chunkSize/2;
-	return noise > 0 ? 1 : noise > 0.5f ? 3 : 0;
+	return (noise > 0) ? (noise > 3 ? 3 : 1) : 0;
 }
 
 chunk *generateChunk(s16 cx, s16 cy, s16 cz) {
@@ -22,7 +22,13 @@ chunk *generateChunk(s16 cx, s16 cy, s16 cz) {
 					u16 above = blockAt(_x, _y, _z + 1); 
 					if (above == 0)
 						block = 2;
-				}			
+				}		
+				if (block == 3) { //  we are stone, check for coal
+					const float sc = 0.1f;
+					float noise = noise3d(0, _x*sc, _y*sc, _z*sc);
+					if (noise > 0.5f)
+						block = 5;
+				}	
 				(*data)[lz][ly][lx] = block;
 		}
 	return data;

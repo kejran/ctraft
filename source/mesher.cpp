@@ -168,11 +168,12 @@ MesherAllocation meshChunk(expandedChunk const &cch) {
 								// https://0fps.net/2013/07/03/ambient-occlusion-for-minecraft-like-worlds/
 								bool side1 = cch[aoZ + aoUZ][aoY + aoUY][aoX + aoUX] > 0; 
 								bool side2 = cch[aoZ + aoVZ][aoY + aoVY][aoX + aoVX] > 0; 
+								int ambient = 1; // corners should not be pure black
 								if (side1 && side2)
-									n.ao = 0;
+									n.ao = ambient;
 								else {
 									bool corner = cch[aoZ + aoUZ + aoVZ][aoY + aoUY + aoVY][aoX + aoUX + aoVX]; 
-									n.ao = 3 - (side1 + side2 + corner);
+									n.ao = 3 + ambient - (side1 + side2 + corner);
 								}
 							}
 

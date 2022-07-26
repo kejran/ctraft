@@ -72,7 +72,7 @@ static C3D_Mtx material =
 	{ // ABGR
 	//{ { 0.0f, 0.4f, 0.3f, 0.2f } }, // Ambient
 	//{ { 0.0f, 0.5f, 0.7f, 0.8f } }, // Diffuse
-	{ { 0.0f, 1.0f, 1.0f, 1.0f } }, // Ambient
+	{ { 0.0f, 0.9f, 0.9f, 0.9f } }, // Ambient
 	{ { 0.0f, 0.0f, 0.0f, 0.0f } }, // Diffuse
 	}
 };
@@ -560,7 +560,7 @@ void markBlockDirty(int sx, int sy, int sz, s16vec3 chunkIdx) {
 		markChunkRemesh(_sv(chunkIdx.x, chunkIdx.y, chunkIdx.z + 1));
 }
 
-u16 selectedBlock = 3;
+u16 selectedBlock = 0;
 
 void handleTouch() {
 	if (hidKeysHeld() & KEY_TOUCH) {
@@ -571,8 +571,7 @@ void handleTouch() {
 		int y = (t.py / 40) - (120/40) + 1;
 		if (x >= 0 && y >= 0 && x < 4 && y < 2) {
 			int id = x + y * 4;
-			if (id != 0)
-				selectedBlock = id;
+			selectedBlock = id;
 		}
 	}
 }
@@ -646,6 +645,10 @@ void handlePlayer(float delta) {
 	
 	moveAndCollide(player.pos, player.velocity, delta, 0.4f, 2);	
 
+	if (kDown & KEY_DLEFT) --selectedBlock;
+	if (kDown & KEY_DRIGHT) ++selectedBlock;
+	selectedBlock &= 7;
+
 	fvec3 dir {sinf(angleX) * cosf(angleY), cosf(angleX) * cosf(angleY), -sinf(angleY)};
 	drawFocus = false;
 	vec3<s32> normal;
@@ -653,7 +656,7 @@ void handlePlayer(float delta) {
 		{player.pos.x, player.pos.y, player.pos.z + 1.5f}, 
 		dir, 3, playerFocus, normal)
 	) {
-		if (kDown & KEY_Y) {
+		if (selectedBlock && (kDown & (KEY_Y | KEY_R))) {
 			int nx = playerFocus.x + normal.x;
 			int ny = playerFocus.y + normal.y;
 			int nz = playerFocus.z + normal.z;
@@ -664,10 +667,9 @@ void handlePlayer(float delta) {
 				int lx = nx & chunkMask, ly = ny & chunkMask, lz = nz & chunkMask;
 				(*ch->data)[lz][ly][lx] = selectedBlock; 
 				markBlockDirty(lx, ly, lz, idx);
-				// todo use selected block
 			}
 		}
-		if (kDown & KEY_X) {
+		if (kDown & (KEY_X | KEY_L)) {
 			int nx = playerFocus.x;
 			int ny = playerFocus.y;
 			int nz = playerFocus.z;
@@ -817,6 +819,8 @@ void updateWorld(fvec3 focus) {
 				tryInitChunkAndMesh(x, y, z);
 }
 
+int renderDistance = 3;
+
 void sceneRender(float iod) {
 
 	/// --- CALCULATE VIEW --- ///
@@ -836,7 +840,8 @@ void sceneRender(float iod) {
 	float eyeHeight = 1.5f;
 	Mtx_Translate(&modelView, -player.pos.x, -player.pos.y, -player.pos.z - eyeHeight, true);
 
-	Mtx_PerspStereoTilt(&projection, C3D_AngleFromDegrees(40.0f), C3D_AspectRatioTop, 0.1f, 100, iod, 2.0f, false);
+	float far = (renderDistance + 1) * chunkSize;
+	Mtx_PerspStereoTilt(&projection, C3D_AngleFromDegrees(70.0f), C3D_AspectRatioTop, 0.4f, far, iod, 2.0f, false);
 
 	/// --- DRAW BLOCKS --- ///
 
@@ -857,8 +862,18 @@ void sceneRender(float iod) {
 
 	C3D_SetAttrInfo(&vertexLayouts.block);
 
-	for (auto [idx, meta]: world) 
-		if (meta.meshed && meta.allocation.vertexCount) {
+	//todo organize
+	int chX = static_cast<int>(player.pos.x) >> chunkBits;
+	int chY = static_cast<int>(player.pos.y) >> chunkBits;
+	int chZ = static_cast<int>(player.pos.z) >> chunkBits;
+	int maxDist2 = renderDistance*renderDistance;
+
+	for (auto [idx, meta]: world) {
+		int dx = idx.x-chX;
+		int dy = idx.y-chY;
+		int dz = idx.z-chZ;
+		int distance2 = dx*dx+dy*dy+dz*dz;
+		if ((distance2 <= maxDist2) && meta.meshed && meta.allocation.vertexCount) {
 			C3D_SetBufInfo(&meta.vertexBuffer);
 			C3D_FVUnifSet(
 				GPU_VERTEX_SHADER, 
@@ -879,6 +894,7 @@ void sceneRender(float iod) {
 				offset += m.count;
 			}
 		}
+	}
 
 	if (drawFocus) {
 		C3D_SetTexEnv(0, &texEnvs.focus);

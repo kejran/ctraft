@@ -104,7 +104,7 @@ void startWorker() {
     LightLock_Init(&results.lock);
     CondVar_Init(&signalNewTask);
 
-    workerThread = threadCreate(workerMain, nullptr, 4*1024, prio-1, 1, false);
+    workerThread = threadCreate(workerMain, nullptr, 4*1024, prio-1, affinity, false);
 }
 
 void stopWorker() {
