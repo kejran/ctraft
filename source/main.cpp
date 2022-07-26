@@ -448,45 +448,61 @@ u16 tryGetBlock(int x, int y, int z) {
 		return 0xffff;
 }
 
-void initMeshVisuals(ChunkMetadata &meta, std::array<chunk *, 6> const &sides) {
-	if (meta.allocation.vertexCount)
-		freeMesh(meta.allocation);
-	meta.allocation = meshChunk(*meta.data, sides);
-	if (meta.allocation.vertexCount) {
-		BufInfo_Init(&meta.vertexBuffer);
-		BufInfo_Add(&meta.vertexBuffer, meta.allocation.vertices, sizeof(vertex), 4, 0x3210);
-	}
-	meta.meshed = true;
-}
-
-// todo: this should not schedule
-// todo: maybe just name it better...
-bool initMeshVisuals(int x, int y, int z, bool force = false) {
-	auto *ch = tryGetChunk(x, y, z);
-	if (ch == nullptr || (ch->meshed && !force))
-		return false;
-
-	std::array<chunk *, 6> ns { nullptr };
-
-	auto _g = [&ns](int i, int _x, int _y, int _z) -> bool {
+bool tryGetSides(int x, int y, int z, std::array<chunk *, 6> &out) {
+	auto _g = [&out](int i, int _x, int _y, int _z) -> bool {
 		
-		if (_z < -1 || _z > 1)
-			return true; // todo: maybe this should happen elsewhere?
+		// if (_z < -1 || _z > 1)
+		// 	return true; // todo: maybe this check should happen elsewhere?
 		auto *m = tryGetChunk(_x, _y, _z);
 		if (m)
-			ns[i] = m->data;
-		return ns[i];
+			out[i] = m->data;
+		return out[i];
 	};
 
-	if (_g(0, x-1, y, z) && 
+	return (
+		_g(0, x-1, y, z) && 
 		_g(1, x+1, y, z) &&
 		_g(2, x, y-1, z) &&
 		_g(3, x, y+1, z) &&
 		_g(4, x, y, z-1) &&
 		_g(5, x, y, z+1)
-	)
-		initMeshVisuals(*ch, ns);
-	return true;
+	);
+}
+
+bool scheduleMesh(
+	ChunkMetadata &meta, 
+	std::array<chunk *, 6> const &sides, 
+	s16vec3 idx, bool priority);
+	
+// already loaded chunk changed, force remeshing
+// take care of the return value, store it in a list?
+bool regenerateMesh(ChunkMetadata &meta, s16 x, s16 y, s16 z) { 
+	std::array<chunk *, 6> sides;
+	if (!tryGetSides(x, y, z, sides))
+		return false;
+	return scheduleMesh(meta, sides, {x, y, z}, true);
+}
+
+bool isMeshScheduled(s16vec3 idx);
+
+bool tryMakeMesh(ChunkMetadata &meta, s16 x, s16 y, s16 z) { 
+	s16vec3 idx { x, y, z };
+	if (meta.meshed) 
+		return true;
+	if (isMeshScheduled(idx))
+		return false;
+	std::array<chunk *, 6> sides;
+	if (!tryGetSides(x, y, z, sides))
+		return false;
+	scheduleMesh(meta, sides, {x, y, z}, true);
+	return false;
+}
+
+bool tryInitChunkAndMesh(int x, int y, int z) {
+	auto *ch = tryGetChunk(x, y, z);
+	if (ch == nullptr)
+		return false;
+	return tryMakeMesh(*ch, x, y, z);
 }
 
 vec3<s32> playerFocus;
@@ -577,11 +593,11 @@ void handlePlayer(float delta) {
 			);
 			if (ch) {
 				(*ch->data)[nz & chunkMask][ny & chunkMask][nx & chunkMask] = 3; 
-				initMeshVisuals(
+				regenerateMesh(
+					*ch, 
 					nx >> chunkBits, 
 					ny >> chunkBits, 
-					nz >> chunkBits, 
-					true
+					nz >> chunkBits
 				);
 				// todo use selected block
 			}
@@ -598,16 +614,16 @@ void handlePlayer(float delta) {
 			);
 			if (ch) {
 				(*ch->data)[nz & chunkMask][ny & chunkMask][nx & chunkMask] = 0; 
-				initMeshVisuals(
+				regenerateMesh(
+					*ch,
 					nx >> chunkBits, 
 					ny >> chunkBits, 
-					nz >> chunkBits, 
-					true
+					nz >> chunkBits
 				);
 				// todo use selected block
 			}
 		}
-		drawFocus = true;
+		//drawFocus = true;
 	}
 }
 
@@ -620,20 +636,32 @@ inline bool canProcessMeshes() {
 // std::array<expandedChunk, maxScheduledMeshes> exChunkCache;
 // std::array<u8, maxScheduledMeshes> exChVectorToCache;
 
-bool scheduleMesh(s16 x, s16 y, s16 z) {
-	if (!canProcessMeshes()) 
-		return false;
-	s16vec3 idx {x, y, z};
+bool isMeshScheduled(s16vec3 idx) {
 	for (auto &c: scheduledMeshes)
 		if (c == idx)
 			return true;
+	return false;
+}
+
+bool scheduleMesh(
+	ChunkMetadata &meta, 
+	std::array<chunk *, 6> const &sides, 
+	s16vec3 idx, bool priority
+) {
+	if (!canProcessMeshes()) 
+		return false;
+
+	// no check for scheduled since they can have different chunk data; 
+	// call to force remeshing, or check separately to avoid moving data 
+
 	scheduledMeshes.push_back(idx);
 	
 	Task task;
-	task.chunk.x = x; 
-	task.chunk.y = y; 
-	task.chunk.z = z;
-	task.chunk.exdata = new expandedChunk(); // todo cache it 
+	task.chunk.x = idx.x; 
+	task.chunk.y = idx.y; 
+	task.chunk.z = idx.z;
+	task.chunk.exdata = new expandedChunk{0}; // todo cache allocations
+	expandChunk(*meta.data, sides, *task.chunk.exdata);
 	task.type = Task::Type::MeshChunk;
 	return postTask(task);
 }
@@ -680,12 +708,19 @@ void processWorkerResults() {
 			case TaskResult::Type::ChunkMesh: {
 				s16vec3 idx = { r.chunk.x, r.chunk.y, r.chunk.z };
 				auto &meta = world[idx];
+				if (meta.allocation.vertexCount)
+					freeMesh(meta.allocation);
 				meta.allocation = std::move(*r.chunk.alloc);
+				if (meta.allocation.vertexCount) {
+					BufInfo_Init(&meta.vertexBuffer);
+					BufInfo_Add(&meta.vertexBuffer, meta.allocation.vertices, sizeof(vertex), 4, 0x3210);
+				}
+				meta.meshed = true;
 				delete r.chunk.alloc;
-				for (size_t i = 0; i < scheduledChunks.size(); ++i)
-					if (scheduledChunks[i] == idx) {
-						scheduledChunks[i] = scheduledChunks.back();
-						scheduledChunks.pop_back();
+				for (size_t i = 0; i < scheduledMeshes.size(); ++i)
+					if (scheduledMeshes[i] == idx) {
+						scheduledMeshes[i] = scheduledMeshes.back();
+						scheduledMeshes.pop_back();
 					}
 			} break;
 			default: break;
@@ -721,7 +756,7 @@ void updateWorld(fvec3 focus) {
 	for (int z = chZ - distanceLoad; z <= chZ + distanceLoad; ++z)
 		for (int y = chY - distanceLoad; y <= chY + distanceLoad; ++y)
 			for (int x = chX - distanceLoad; x <= chX + distanceLoad; ++x)
-				initMeshVisuals(x, y, z);
+				tryInitChunkAndMesh(x, y, z);
 }
 
 void sceneRender(float iod) {
@@ -772,6 +807,7 @@ void sceneRender(float iod) {
 			);
 			u16 offset = 0;
 			for (auto &m: meta.allocation.meshes) {
+				//if ((idx.x^idx.y^idx.z) & 1) continue; // funk mode
 				C3D_TexBind(0, &textures[m.texture + 1]);
 				C3D_DrawElements(
 					GPU_TRIANGLES, 
@@ -853,6 +889,7 @@ int main()
 	C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
 	C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
 	consoleInit(GFX_BOTTOM, NULL);
+	C3D_CullFace(GPU_CULL_BACK_CCW);
 
 	C3D_RenderTarget* targetLeft  = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
 	C3D_RenderTarget* targetRight = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);

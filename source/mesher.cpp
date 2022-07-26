@@ -243,6 +243,7 @@ MesherAllocation meshChunk(expandedChunk const &cch) {
 	return result;
 }
 
+// todo: we probably do not need this one with the task system
 MesherAllocation meshChunk(chunk const &ch, std::array<chunk *, 6> const &sides) {
 	
 	// -x, +x, -y, +y, -z, +z
@@ -257,7 +258,6 @@ void expandChunk(chunk const &ch, std::array<chunk *, 6> const &sides, expandedC
 		for (int y = 0; y < chunkSize; ++y)
 			for (int x = 0; x < chunkSize; ++x)
 				ex[z + 1][y + 1][x + 1] = ch[z][y][x];  
-
 	// organise this somehow...
 	if (sides[0]) // -x
 		for (int z = 0; z < chunkSize; ++z)
@@ -283,7 +283,6 @@ void expandChunk(chunk const &ch, std::array<chunk *, 6> const &sides, expandedC
 		for (int y = 0; y < chunkSize; ++y)
 			for (int x = 0; x < chunkSize; ++x)
 				ex[chunkSize+1][y + 1][x + 1] = (*sides[5])[0][y][x];
-
 }
 
 

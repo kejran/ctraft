@@ -12,7 +12,7 @@ namespace {
     CondVar signalNewTask;
     CondVar signalNewResult;
 
-    constexpr int queuesize = 128;
+    constexpr int queuesize = 32;
         
         // todo a common class maybe?
     struct {
@@ -113,7 +113,7 @@ void stopWorker() {
 }
 
 // todo: maybe have separate queues or limits per task type?
-bool postTask(Task task) {
+bool postTask(Task task, bool priority) { // todo use priority
 
     LightLock_Lock(&tasks.lock);
 

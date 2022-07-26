@@ -41,5 +41,5 @@ struct TaskResult {
 
 void startWorker();
 void stopWorker();
-bool postTask(Task task);
+bool postTask(Task task, bool priority = false);
 bool getResult(TaskResult &result);
