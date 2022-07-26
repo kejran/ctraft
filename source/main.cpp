@@ -39,7 +39,7 @@ struct {
 		DVLB_s* dvlb;
 		shaderProgram_s program;
 		struct {
-			int projection, modelView;
+			int projection;//, modelView;
 			int lightVec, lightClr, material, chunkPos;
 		} locs;
 	} block;
@@ -47,7 +47,7 @@ struct {
 		DVLB_s* dvlb;
 		shaderProgram_s program;
 		struct {
-			int projection, modelView, blockPos;
+			int projection, /*modelView,*/ blockPos;
 		} locs;
 	} focus;
 } shaders;
@@ -361,8 +361,8 @@ static void sceneInit(void)
 	// Get the location of the uniforms
 	shaders.block.locs.projection = 
 		shaderInstanceGetUniformLocation(shaders.block.program.vertexShader, "projection");
-	shaders.block.locs.modelView = 
-		shaderInstanceGetUniformLocation(shaders.block.program.vertexShader, "modelView");
+	// shaders.block.locs.modelView = 
+	// 	shaderInstanceGetUniformLocation(shaders.block.program.vertexShader, "modelView");
 	shaders.block.locs.lightVec = 
 		shaderInstanceGetUniformLocation(shaders.block.program.vertexShader, "lightVec");
 	shaders.block.locs.lightClr = 
@@ -380,8 +380,8 @@ static void sceneInit(void)
 	// Get the location of the uniforms
 	shaders.focus.locs.projection = 
 		shaderInstanceGetUniformLocation(shaders.focus.program.vertexShader, "projection");
-	shaders.focus.locs.modelView = 
-		shaderInstanceGetUniformLocation(shaders.focus.program.vertexShader, "modelView");
+	// shaders.focus.locs.modelView = 
+	// 	shaderInstanceGetUniformLocation(shaders.focus.program.vertexShader, "modelView");
 	shaders.focus.locs.blockPos = 
 		shaderInstanceGetUniformLocation(shaders.focus.program.vertexShader, "blockPos");
 		
@@ -462,7 +462,7 @@ u16 tryGetBlock(int x, int y, int z) {
 
 bool tryGetSides(int x, int y, int z, std::array<chunk *, 6> &out) {
 	auto _g = [&out](int i, int _x, int _y, int _z) -> bool {
-		
+		// out[i] = nullptr; return true; // zero border ahahahah
 		// if (_z < -1 || _z > 1)
 		// 	return true; // todo: maybe this check should happen elsewhere?
 		auto *m = tryGetChunk(_x, _y, _z);
@@ -825,6 +825,32 @@ C3D_FogLut fog;
 
 constexpr float farPlane = (renderDistance + 1) * chunkSize;
 
+// this is not working well... debug it later, too tired for this now
+bool inFrustum(C3D_Mtx const &mtx, s16vec3 v) {
+	fvec3 vmin { 2, 2, 2 }; fvec3 vmax { -2, -2, -2 };
+	for (int z = 0; z < 2; ++z)
+		for (int y = 0; y < 2; ++y)
+			for (int x = 0; x < 2; ++x) {
+				auto vf = FVec4_New((v.x+x)*16, (v.y+y)*16, (v.z+z)*16, 1);
+				vf = Mtx_MultiplyFVec4(&mtx, vf);
+				vf = FVec4_PerspDivide(vf);
+				if (vf.z > 0) continue;
+				
+				vmin.x = std::min(vf.x, vmin.x);
+				vmin.y = std::min(vf.y, vmin.y);
+
+				vmax.x = std::max(vf.x, vmax.x);
+				vmax.y = std::max(vf.y, vmax.y);
+			}
+
+	bool out = 
+		vmin.x > 1 || vmax.x < -1 ||   
+		vmin.y > 1 || vmax.y < -1;
+	return !out;
+}
+
+// #define CONSOLE
+
 void sceneRender(float iod) {
 
 	/// --- CALCULATE VIEW --- ///
@@ -852,8 +878,8 @@ void sceneRender(float iod) {
 		&projection, 
 		C3D_AngleFromDegrees(70.0f), 
 		C3D_AspectRatioTop, 
-		0.4f, farPlane, 
-		iod, 3.0f, false
+		0.2f, farPlane, 
+		iod, 1.5f, false
 		);
 
 	/// --- DRAW BLOCKS --- ///
@@ -866,9 +892,13 @@ void sceneRender(float iod) {
 	);
 	C3D_BindProgram(&shaders.block.program);
 
+	C3D_Mtx combined;
+	Mtx_Multiply(&combined, &projection, &modelView);
+	projection = combined;
+
 	// Update the uniforms
 	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaders.block.locs.projection, &projection);
-	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaders.block.locs.modelView,  &modelView);
+	// C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaders.block.locs.modelView,  &modelView);
 	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaders.block.locs.material,   &material);
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, shaders.block.locs.lightVec,     0.0f, 0.6f, -0.8f, 0.0f);
 	C3D_FVUnifSet(GPU_VERTEX_SHADER, shaders.block.locs.lightClr,     1.0f, 1.0f,  1.0f, 1.0f);
@@ -886,8 +916,15 @@ void sceneRender(float iod) {
 		int dx = idx.x-chX;
 		int dy = idx.y-chY;
 		int dz = idx.z-chZ;
+		// if (idx.x != 0 || idx.y != 0 || idx.z != 0) continue; // to the solitary mode
 		int distance2 = dx*dx+dy*dy+dz*dz;
-		if ((distance2 <= maxDist2) && meta.meshed && meta.allocation.vertexCount) {
+		 // todo do this check once for stereo rendering
+		if (
+			(distance2 <= maxDist2) && 
+			meta.meshed && 
+			meta.allocation.vertexCount && 
+			(distance2 < 4 || inFrustum(projection, idx)) // frustum is buggy, always immediate neighbourhood 
+		) {
 			++count;
 			C3D_SetBufInfo(&meta.vertexBuffer);
 			C3D_FVUnifSet(
@@ -910,7 +947,11 @@ void sceneRender(float iod) {
 			}
 		}
 	}
-	printf("Chunks rendered: %i\n", count);
+	#ifdef CONSOLE
+		static int i = 0;
+		if (i++ == 30) i = 0;
+		if (i == 0) printf("Chunks drawn: %i\n", count);
+	#endif
 
 	C3D_FogLutBind(nullptr);
 
@@ -925,7 +966,7 @@ void sceneRender(float iod) {
 
 		// Update the uniforms
 		C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaders.focus.locs.projection, &projection);
-		C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaders.focus.locs.modelView,  &modelView);
+		// C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaders.focus.locs.modelView,  &modelView);
 		C3D_FVUnifSet(GPU_VERTEX_SHADER, shaders.focus.locs.blockPos, 
 			playerFocus.x, playerFocus.y, playerFocus.z, 0.0f
 		);
@@ -992,10 +1033,7 @@ void topUI() {
 	C2D_Tint tint {0xaa'ff'ff'ff, 1.0f };
 	C2D_ImageTint it { { tint, tint, tint, tint } };
 	C2D_DrawImageAt(image, 200-scale*8, 120-scale*8, 1, &it, scale, scale);
-	
 }
-
-// #define CONSOLE
 
 int main() {
 
@@ -1015,7 +1053,7 @@ int main() {
 	C3D_RenderTargetSetOutput(targetRight, GFX_TOP, GFX_RIGHT, DISPLAY_TRANSFER_FLAGS);
 
 	// FogLut_Exp(&fog, 0.05f, 1.5f, 0.4f, farPlane);
-	FogLut_Exp(&fog, 0.02f, 1.5f, 0.4f, farPlane);
+	FogLut_Exp(&fog, 0.02f, 1.5f, 0.2f, farPlane);
 	
 	// Initialize the scene
 	sceneInit();
@@ -1039,7 +1077,7 @@ int main() {
 		hidScanInput();
 
 		float slider = osGet3DSliderState();
-		float iod = slider/3;
+		float iod = slider/5;
 
 		handleTouch();
 
