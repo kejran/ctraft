@@ -108,6 +108,8 @@ void startWorker() {
 }
 
 void stopWorker() {
+    runWorker = false;
+    CondVar_Broadcast(&signalNewTask);
     threadJoin(workerThread, U64_MAX);
     threadFree(workerThread);
 }

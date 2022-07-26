@@ -41,11 +41,15 @@ static const u8vec3 basicCubeVs[8] = {
 	{0, 1, 1},
 };
 
-// (0), dirt, grass, stone
+// (0), dirt, grass, stone, cobble, coal, sand, planks
 static constexpr BlockVisual blockVisuals[] = {
-	{ 0, 0, 0, 0, 0, 0 },
-	{ 1, 1, 1, 1, 0, 2 },
-	{ 3, 3, 3, 3, 3, 3 }
+	{ 0, 0, 0, 0, 0, 0 }, // dirt
+	{ 1, 1, 1, 1, 0, 2 }, // grass
+	{ 3, 3, 3, 3, 3, 3 }, // stone
+	{ 5, 5, 5, 5, 5, 5 }, // cobble
+	{ 4, 4, 4, 4, 4, 4 }, // coal
+	{ 6, 6, 6, 6, 6, 6 }, // sand
+	{ 7, 7, 7, 7, 7, 7 }, // planks
 };
 
 // for first block in interation; v is -1/0/1
@@ -293,4 +297,8 @@ void freeMesh(MesherAllocation &alloc) {
 		linearFree(alloc.vertices);
 	if (alloc.indices)
 		linearFree(alloc.indices);
+}
+
+BlockVisual const &getBlockVisual(u16 block) {
+	return blockVisuals[block - 1];
 }

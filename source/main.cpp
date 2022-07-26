@@ -11,10 +11,14 @@
 #include "mesher.hpp"
 #include "worker.hpp"
 
+#include "coal_ore_t3x.h"
+#include "cobblestone_t3x.h"
 #include "cursor_t3x.h"
 #include "dirt_t3x.h"
 #include "grass_side_t3x.h"
 #include "grass_top_t3x.h"
+#include "planks_oak_t3x.h"
+#include "sand_t3x.h"
 #include "stone_t3x.h"
 
 #include "terrain_shbin.h"
@@ -403,6 +407,14 @@ static void sceneInit(void)
 		svcBreak(USERBREAK_PANIC);
 	if (!loadTextureFromMem(&textures[4], nullptr, stone_t3x, stone_t3x_size))
 		svcBreak(USERBREAK_PANIC);
+	if (!loadTextureFromMem(&textures[5], nullptr, coal_ore_t3x, coal_ore_t3x_size))
+		svcBreak(USERBREAK_PANIC);
+	if (!loadTextureFromMem(&textures[6], nullptr, cobblestone_t3x, cobblestone_t3x_size))
+		svcBreak(USERBREAK_PANIC);
+	if (!loadTextureFromMem(&textures[7], nullptr, sand_t3x, sand_t3x_size))
+		svcBreak(USERBREAK_PANIC);
+	if (!loadTextureFromMem(&textures[8], nullptr, planks_oak_t3x, planks_oak_t3x_size))
+		svcBreak(USERBREAK_PANIC);
 		
 	for (auto &t: textures) {
 		C3D_TexSetFilter(&t, GPU_NEAREST, GPU_LINEAR);
@@ -548,6 +560,23 @@ void markBlockDirty(int sx, int sy, int sz, s16vec3 chunkIdx) {
 		markChunkRemesh(_sv(chunkIdx.x, chunkIdx.y, chunkIdx.z + 1));
 }
 
+u16 selectedBlock = 3;
+
+void handleTouch() {
+	if (hidKeysHeld() & KEY_TOUCH) {
+		touchPosition t;
+		hidTouchRead(&t);
+				
+		int x = (t.px / 40) - (160/40) + 2;
+		int y = (t.py / 40) - (120/40) + 1;
+		if (x >= 0 && y >= 0 && x < 4 && y < 2) {
+			int id = x + y * 4;
+			if (id != 0)
+				selectedBlock = id;
+		}
+	}
+}
+
 void handlePlayer(float delta) {
 
 	// rotation
@@ -561,8 +590,11 @@ void handlePlayer(float delta) {
 	if (dx > t || dx < -t) dx = dx > 0 ? dx - t : dx + t; else dx = 0;
 	if (dy > t || dy < -t) dy = dy > 0 ? dy - t : dy + t; else dy = 0;
 
-	angleX += dx * 0.05f;
-	angleY -= dy * 0.05f;
+	// citra look hack, comment for HW
+	//dx /= 2; dy /= 2;
+
+	angleX += dx * delta * 4;
+	angleY -= dy * delta * 4;
 	if (angleY > M_PI_2) angleY = M_PI_2;
 	if (angleY < -M_PI_2) angleY = -M_PI_2;
 
@@ -630,7 +662,7 @@ void handlePlayer(float delta) {
 			auto *ch = tryGetChunk(idx.x, idx.y, idx.z);
 			if (ch) {
 				int lx = nx & chunkMask, ly = ny & chunkMask, lz = nz & chunkMask;
-				(*ch->data)[lz][ly][lx] = 3; 
+				(*ch->data)[lz][ly][lx] = selectedBlock; 
 				markBlockDirty(lx, ly, lz, idx);
 				// todo use selected block
 			}
@@ -893,7 +925,25 @@ void sceneExit(void)
 	DVLB_Free(shaders.block.dvlb);
 }
 
-void uiRender() {
+void bottomUI() {
+	const int blockCount = 8;
+	const int size = 32;
+	Tex3DS_SubTexture sub { size, size, 0, 1, 1, 0 };
+	C2D_Image img;
+	img.subtex = &sub;
+	const int spacing = 40;
+	for (int i = 1; i < blockCount; ++i) {
+		int x = i % 4;
+		int y = i / 4;
+		img.tex = &textures[getBlockVisual(i)[0] + 1]; // -Y
+		C2D_DrawImageAt(img, 
+			160 - (4 * spacing / 2) + (spacing - size) / 2 + x * spacing, 
+			120 - (2 * spacing / 2) + (spacing - size) / 2 + y * spacing, 
+			1);
+	}
+}
+
+void topUI() {
 	C2D_Image image;
 	image.tex = &textures[0];
 	Tex3DS_SubTexture sub { 16, 16, 0, 0, 1, 1 };
@@ -908,6 +958,7 @@ void uiRender() {
 	C2D_Tint tint {0xaa'ff'ff'ff, 1.0f };
 	C2D_ImageTint it { { tint, tint, tint, tint } };
 	C2D_DrawImageAt(image, 200-scale*8, 120-scale*8, 1, &it, scale, scale);
+	
 }
 
 int main()
@@ -917,8 +968,12 @@ int main()
 	gfxInitDefault();
 	C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
 	C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
-	consoleInit(GFX_BOTTOM, NULL);
-
+	#ifdef CONSOLE
+		consoleInit(GFX_BOTTOM, NULL);
+	#else
+		C3D_RenderTarget* targetBottom = C3D_RenderTargetCreate(240, 320, GPU_RB_RGBA8, GPU_RB_DEPTH16);
+		C3D_RenderTargetSetOutput(targetBottom, GFX_BOTTOM, GFX_LEFT, DISPLAY_TRANSFER_FLAGS);
+	#endif
 	C3D_RenderTarget* targetLeft  = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
 	C3D_RenderTarget* targetRight = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
 	C3D_RenderTargetSetOutput(targetLeft,  GFX_TOP, GFX_LEFT,  DISPLAY_TRANSFER_FLAGS);
@@ -948,6 +1003,8 @@ int main()
 		float slider = osGet3DSliderState();
 		float iod = slider/3;
 
+		handleTouch();
+
 		// Respond to user input
 		u32 kDown = hidKeysDown();
 		if (kDown & KEY_START)
@@ -974,7 +1031,7 @@ int main()
 			C2D_SceneTarget(targetLeft);
 			sceneRender(-iod);
 			C2D_Prepare();
-			uiRender();
+			topUI();
 			C2D_Flush();
 			if (should3d)
 			{
@@ -983,18 +1040,30 @@ int main()
 				C2D_SceneTarget(targetRight);
 				sceneRender(iod);
 				C2D_Prepare();
-				uiRender();
+				topUI();
 				C2D_Flush();
 			}
+
+			#ifndef CONSOLE
+				C3D_RenderTargetClear(targetBottom, C3D_CLEAR_ALL, 0x222222ff, 0);
+				C3D_FrameDrawOn(targetBottom);
+				C2D_SceneTarget(targetBottom);
+				C2D_Prepare();
+				bottomUI();
+				C2D_Flush();
+			#endif
 		}
 		C3D_FrameEnd(0);
 	}
 
+	stopWorker(); // halt processing, submit leftover jobs as results
+	processWorkerResults(); // accept all results so they do not leak
+
 	sceneExit();
 
-	stopWorker();
-
 	C3D_Fini();
+	C2D_Fini();
+	
 	gfxExit();
 	return 0;
 }

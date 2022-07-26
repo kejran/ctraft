@@ -23,3 +23,5 @@ MesherAllocation meshChunk(chunk const &ch, std::array<chunk *, 6> const &sides)
 void expandChunk(chunk const &ch, std::array<chunk *, 6> const &sides, expandedChunk &ex);
 
 void freeMesh(MesherAllocation &);
+
+BlockVisual const &getBlockVisual(u16 block);
