@@ -1,7 +1,7 @@
 .fvec projection[4], modelView[4]
 .fvec blockPos
 
-.constf myconst(0.0, 1.0, -1.0, 0.25)
+.constf myconst(0.0, 1.0, -1.0, 0.15)
 
 .alias  zeros myconst.xxxx ; Vector full of zeros
 .alias  ones  myconst.yyyy ; Vector full of ones

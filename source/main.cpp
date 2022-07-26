@@ -507,6 +507,47 @@ bool tryInitChunkAndMesh(int x, int y, int z) {
 vec3<s32> playerFocus;
 bool drawFocus = false;
 
+std::vector<s16vec3> chunksToRemesh; // todo bounded array?
+void markChunkRemesh(s16vec3 loc) {
+	for (auto &idx : chunksToRemesh)
+		if (idx == loc)
+			return;
+	chunksToRemesh.push_back(loc);
+}
+
+bool canProcessMeshes(bool priority = false);
+void scheduleMarkedRemeshes() {
+	while (chunksToRemesh.size()) {
+		if (!canProcessMeshes(true))
+			return;
+		auto &idx = chunksToRemesh.back();
+		chunksToRemesh.pop_back(); // todo: it explodes without it, investigate
+		auto ch = tryGetChunk(idx.x, idx.y, idx.z);
+		if (!ch) // chunk is not resident, so just ignore it
+			return;  
+		regenerateMesh(*ch, idx.x, idx.y, idx.z);
+	}
+}
+
+inline s16vec3 _sv(s16 x, s16 y, s16 z) { return { x, y, z }; }
+
+// we have idx by now anyway...
+void markBlockDirty(int sx, int sy, int sz, s16vec3 chunkIdx) {
+	markChunkRemesh(chunkIdx);
+	if (sx == 0) 
+		markChunkRemesh(_sv(chunkIdx.x - 1, chunkIdx.y, chunkIdx.z));
+	if (sx == chunkSize - 1) 
+		markChunkRemesh(_sv(chunkIdx.x + 1, chunkIdx.y, chunkIdx.z));
+	if (sy == 0) 
+		markChunkRemesh(_sv(chunkIdx.x, chunkIdx.y - 1, chunkIdx.z));
+	if (sy == chunkSize - 1) 
+		markChunkRemesh(_sv(chunkIdx.x, chunkIdx.y + 1, chunkIdx.z));
+	if (sz == 0) 
+		markChunkRemesh(_sv(chunkIdx.x, chunkIdx.y, chunkIdx.z - 1));
+	if (sz == chunkSize - 1) 
+		markChunkRemesh(_sv(chunkIdx.x, chunkIdx.y, chunkIdx.z + 1));
+}
+
 void handlePlayer(float delta) {
 
 	// rotation
@@ -585,19 +626,12 @@ void handlePlayer(float delta) {
 			int ny = playerFocus.y + normal.y;
 			int nz = playerFocus.z + normal.z;
 			
-			auto *ch = tryGetChunk(
-				nx >> chunkBits, 
-				ny >> chunkBits, 
-				nz >> chunkBits
-			);
+			auto idx = _sv(nx >> chunkBits, ny >> chunkBits, nz >> chunkBits);
+			auto *ch = tryGetChunk(idx.x, idx.y, idx.z);
 			if (ch) {
-				(*ch->data)[nz & chunkMask][ny & chunkMask][nx & chunkMask] = 3; 
-				regenerateMesh(
-					*ch, 
-					nx >> chunkBits, 
-					ny >> chunkBits, 
-					nz >> chunkBits
-				);
+				int lx = nx & chunkMask, ly = ny & chunkMask, lz = nz & chunkMask;
+				(*ch->data)[lz][ly][lx] = 3; 
+				markBlockDirty(lx, ly, lz, idx);
 				// todo use selected block
 			}
 		}
@@ -605,35 +639,28 @@ void handlePlayer(float delta) {
 			int nx = playerFocus.x;
 			int ny = playerFocus.y;
 			int nz = playerFocus.z;
-			
-			auto *ch = tryGetChunk(
-				nx >> chunkBits, 
-				ny >> chunkBits, 
-				nz >> chunkBits
-			);
+
+			auto idx = _sv(nx >> chunkBits, ny >> chunkBits, nz >> chunkBits);
+			auto *ch = tryGetChunk(idx.x, idx.y, idx.z);
 			if (ch) {
-				(*ch->data)[nz & chunkMask][ny & chunkMask][nx & chunkMask] = 0; 
-				regenerateMesh(
-					*ch,
-					nx >> chunkBits, 
-					ny >> chunkBits, 
-					nz >> chunkBits
-				);
-				// todo use selected block
+				int lx = nx & chunkMask, ly = ny & chunkMask, lz = nz & chunkMask;
+				(*ch->data)[lz][ly][lx] = 0; 
+				markBlockDirty(lx, ly, lz, idx);
 			}
 		}
-		//drawFocus = true;
+		drawFocus = true;
 	}
 }
 
 constexpr int maxScheduledMeshes = 8;
-std::vector<s16vec3> scheduledMeshes;
+constexpr int scheduledMeshesPrioritySpace = 2;
+std::vector<s16vec3> scheduledMeshes; // todo array
 
-inline bool canProcessMeshes() {
-	return scheduledMeshes.size() < maxScheduledMeshes;
+inline bool canProcessMeshes(bool priority) {
+	return scheduledMeshes.size() < (priority ? 
+		maxScheduledMeshes + scheduledMeshesPrioritySpace : 
+		maxScheduledMeshes);
 }
-// std::array<expandedChunk, maxScheduledMeshes> exChunkCache;
-// std::array<u8, maxScheduledMeshes> exChVectorToCache;
 
 bool isMeshScheduled(s16vec3 idx) {
 	for (auto &c: scheduledMeshes)
@@ -647,7 +674,8 @@ bool scheduleMesh(
 	std::array<chunk *, 6> const &sides, 
 	s16vec3 idx, bool priority
 ) {
-	if (!canProcessMeshes()) 
+	// todo: caller could check for this to save time on gathering sides 
+	if (!canProcessMeshes(priority)) 
 		return false;
 
 	// no check for scheduled since they can have different chunk data; 
@@ -662,9 +690,8 @@ bool scheduleMesh(
 	task.chunk.exdata = new expandedChunk{0}; // todo cache allocations
 	expandChunk(*meta.data, sides, *task.chunk.exdata);
 	task.type = Task::Type::MeshChunk;
-	return postTask(task);
+	return postTask(task, priority);
 }
-
 
 constexpr int maxScheduledChunks = 8;
 std::vector<s16vec3> scheduledChunks;
@@ -911,9 +938,9 @@ int main()
 	// Main loop
 	while (aptMainLoop()) {
 
-		// do it before input and vsync wait
+		// do it before input and vsync wait, consider player input
 		processWorkerResults();
-	
+		scheduleMarkedRemeshes();
 		updateWorld(player.pos);
 
 		hidScanInput();

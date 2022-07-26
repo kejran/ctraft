@@ -113,13 +113,19 @@ void stopWorker() {
 }
 
 // todo: maybe have separate queues or limits per task type?
-bool postTask(Task task, bool priority) { // todo use priority
+bool postTask(Task task, bool priority) { 
 
     LightLock_Lock(&tasks.lock);
 
     if (tasks.count < queuesize) {
-        tasks.data[(tasks.start + tasks.count) % queuesize] = task;
-        ++tasks.count;
+        if (priority) { // important task; put it on the front of the queue
+            tasks.start = (tasks.start - 1 + queuesize) % queuesize;
+            tasks.data[tasks.start] = task;
+            ++tasks.count;
+        } else { // put it on the end of queue after other work
+            tasks.data[(tasks.start + tasks.count) % queuesize] = task;
+            ++tasks.count;
+        }
         LightLock_Unlock(&tasks.lock);
         CondVar_Signal(&signalNewTask);
         return true;
