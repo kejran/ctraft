@@ -819,13 +819,21 @@ void updateWorld(fvec3 focus) {
 				tryInitChunkAndMesh(x, y, z);
 }
 
-int renderDistance = 3;
+constexpr int renderDistance = 3;
+
+C3D_FogLut fog;
+
+constexpr float farPlane = (renderDistance + 1) * chunkSize;
 
 void sceneRender(float iod) {
 
 	/// --- CALCULATE VIEW --- ///
 
 	// todo: we can probably merge view and projection into one
+
+	C3D_FogGasMode(GPU_FOG, GPU_PLAIN_DENSITY, false);
+	C3D_FogColor(0xD8B068);
+	C3D_FogLutBind(&fog);
 
 	C3D_CullFace(GPU_CULL_BACK_CCW);
 
@@ -840,8 +848,13 @@ void sceneRender(float iod) {
 	float eyeHeight = 1.5f;
 	Mtx_Translate(&modelView, -player.pos.x, -player.pos.y, -player.pos.z - eyeHeight, true);
 
-	float far = (renderDistance + 1) * chunkSize;
-	Mtx_PerspStereoTilt(&projection, C3D_AngleFromDegrees(70.0f), C3D_AspectRatioTop, 0.4f, far, iod, 2.0f, false);
+	Mtx_PerspStereoTilt(
+		&projection, 
+		C3D_AngleFromDegrees(70.0f), 
+		C3D_AspectRatioTop, 
+		0.4f, farPlane, 
+		iod, 3.0f, false
+		);
 
 	/// --- DRAW BLOCKS --- ///
 
@@ -868,12 +881,14 @@ void sceneRender(float iod) {
 	int chZ = static_cast<int>(player.pos.z) >> chunkBits;
 	int maxDist2 = renderDistance*renderDistance;
 
+	int count = 0;
 	for (auto [idx, meta]: world) {
 		int dx = idx.x-chX;
 		int dy = idx.y-chY;
 		int dz = idx.z-chZ;
 		int distance2 = dx*dx+dy*dy+dz*dz;
 		if ((distance2 <= maxDist2) && meta.meshed && meta.allocation.vertexCount) {
+			++count;
 			C3D_SetBufInfo(&meta.vertexBuffer);
 			C3D_FVUnifSet(
 				GPU_VERTEX_SHADER, 
@@ -895,6 +910,9 @@ void sceneRender(float iod) {
 			}
 		}
 	}
+	printf("Chunks rendered: %i\n", count);
+
+	C3D_FogLutBind(nullptr);
 
 	if (drawFocus) {
 		C3D_SetTexEnv(0, &texEnvs.focus);
@@ -977,8 +995,9 @@ void topUI() {
 	
 }
 
-int main()
-{
+// #define CONSOLE
+
+int main() {
 
 	// Initialize graphics
 	gfxInitDefault();
@@ -995,6 +1014,9 @@ int main()
 	C3D_RenderTargetSetOutput(targetLeft,  GFX_TOP, GFX_LEFT,  DISPLAY_TRANSFER_FLAGS);
 	C3D_RenderTargetSetOutput(targetRight, GFX_TOP, GFX_RIGHT, DISPLAY_TRANSFER_FLAGS);
 
+	// FogLut_Exp(&fog, 0.05f, 1.5f, 0.4f, farPlane);
+	FogLut_Exp(&fog, 0.02f, 1.5f, 0.4f, farPlane);
+	
 	// Initialize the scene
 	sceneInit();
 
