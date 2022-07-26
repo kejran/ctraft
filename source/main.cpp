@@ -454,9 +454,8 @@ bool tryGetSides(int x, int y, int z, std::array<chunk *, 6> &out) {
 		// if (_z < -1 || _z > 1)
 		// 	return true; // todo: maybe this check should happen elsewhere?
 		auto *m = tryGetChunk(_x, _y, _z);
-		if (m)
-			out[i] = m->data;
-		return out[i];
+		out[i] = m ? m->data : nullptr;
+		return out[i] != nullptr;
 	};
 
 	return (
@@ -477,7 +476,7 @@ bool scheduleMesh(
 // already loaded chunk changed, force remeshing
 // take care of the return value, store it in a list?
 bool regenerateMesh(ChunkMetadata &meta, s16 x, s16 y, s16 z) { 
-	std::array<chunk *, 6> sides;
+	std::array<chunk *, 6> sides { nullptr };
 	if (!tryGetSides(x, y, z, sides))
 		return false;
 	return scheduleMesh(meta, sides, {x, y, z}, true);
@@ -491,10 +490,10 @@ bool tryMakeMesh(ChunkMetadata &meta, s16 x, s16 y, s16 z) {
 		return true;
 	if (isMeshScheduled(idx))
 		return false;
-	std::array<chunk *, 6> sides;
+	std::array<chunk *, 6> sides { nullptr };
 	if (!tryGetSides(x, y, z, sides))
 		return false;
-	scheduleMesh(meta, sides, {x, y, z}, true);
+	scheduleMesh(meta, sides, idx, true);
 	return false;
 }
 
@@ -765,6 +764,8 @@ void sceneRender(float iod) {
 
 	// todo: we can probably merge view and projection into one
 
+	C3D_CullFace(GPU_CULL_BACK_CCW);
+
 	C3D_Mtx modelView;
 	Mtx_Identity(&modelView);
 
@@ -807,7 +808,8 @@ void sceneRender(float iod) {
 			);
 			u16 offset = 0;
 			for (auto &m: meta.allocation.meshes) {
-				//if ((idx.x^idx.y^idx.z) & 1) continue; // funk mode
+				// if ((idx.x^idx.y^idx.z) & 1) continue; // funk mode
+				// if (idx.x&1 || idx.y & 1 || idx.z & 1) continue; // DISCO FEVER
 				C3D_TexBind(0, &textures[m.texture + 1]);
 				C3D_DrawElements(
 					GPU_TRIANGLES, 
@@ -889,7 +891,6 @@ int main()
 	C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
 	C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
 	consoleInit(GFX_BOTTOM, NULL);
-	C3D_CullFace(GPU_CULL_BACK_CCW);
 
 	C3D_RenderTarget* targetLeft  = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
 	C3D_RenderTarget* targetRight = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);

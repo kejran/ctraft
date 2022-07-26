@@ -79,8 +79,9 @@ MesherAllocation meshChunk(expandedChunk const &cch) {
 	
 	// todo refactor this using templates + lambda accessor for each side  
 
+// side 2 & 4 works
 	for (int s = 0; s < 6; ++s) { // side
-		
+// int s = 0;{		
 		// ghetto matrix math
 		int8_t normX = 0, normY = 0, normZ = 0;
 		int8_t texUX = 0, texUY = 0, texUZ = 0;
@@ -257,7 +258,8 @@ void expandChunk(chunk const &ch, std::array<chunk *, 6> const &sides, expandedC
 	for (int z = 0; z < chunkSize; ++z)
 		for (int y = 0; y < chunkSize; ++y)
 			for (int x = 0; x < chunkSize; ++x)
-				ex[z + 1][y + 1][x + 1] = ch[z][y][x];  
+				ex[z + 1][y + 1][x + 1] = ch[z][y][x]; 
+
 	// organise this somehow...
 	if (sides[0]) // -x
 		for (int z = 0; z < chunkSize; ++z)
