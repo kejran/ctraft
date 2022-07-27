@@ -17,23 +17,23 @@
 
 #include "terrain_shbin.h"
 #include "focus_shbin.h"
+#include "sky_shbin.h"
 
 namespace {
 
-#define CLEAR_COLOR 0x68B0D8FF
+#define CLEAR_COLOR 0x9999B2FF
 
 #define DISPLAY_TRANSFER_FLAGS \
 	(GX_TRANSFER_FLIP_VERT(0) | GX_TRANSFER_OUT_TILED(0) | GX_TRANSFER_RAW_COPY(0) | \
 	GX_TRANSFER_IN_FORMAT(GX_TRANSFER_FMT_RGBA8) | GX_TRANSFER_OUT_FORMAT(GX_TRANSFER_FMT_RGB8) | \
 	GX_TRANSFER_SCALING(GX_TRANSFER_SCALE_NO))
 
-
 struct {
 	struct {
 		DVLB_s* dvlb;
 		shaderProgram_s program;
 		struct {
-			int projection;//, modelView;
+			int projection;
 			int lightVec, lightClr, material, chunkPos;
 		} locs;
 	} block;
@@ -41,27 +41,37 @@ struct {
 		DVLB_s* dvlb;
 		shaderProgram_s program;
 		struct {
-			int projection, /*modelView,*/ blockPos;
+			int projection, blockPos;
 		} locs;
 	} focus;
+	struct {
+		DVLB_s* dvlb;
+		shaderProgram_s program;
+		struct {
+			int projection;
+		} locs;
+	} sky;
 } shaders;
 
 
 struct {
 	C3D_AttrInfo block;
 	C3D_AttrInfo focus;
+	C3D_AttrInfo sky;
 } vertexLayouts;
 
 struct 
 {
-	C3D_TexEnv block;
-	C3D_TexEnv focus;
+	C3D_TexEnv textured;
+	C3D_TexEnv solid;
 } texEnvs;
 
 void *focusvbo;
 C3D_BufInfo focusBuffer;
 
-static C3D_Mtx projection; // todo unnecessary static
+void *skyvbo;
+C3D_BufInfo skyBuffer;
+
 static C3D_Mtx material = // todo use two vectors instead
 {
 	{ // ABGR
@@ -177,11 +187,106 @@ void shaderInit() {
 	shaderProgramSetVsh(&shaders.focus.program, &shaders.focus.dvlb->DVLE[0]);
 	C3D_BindProgram(&shaders.focus.program);
 
-	// Get the location of the uniforms
 	shaders.focus.locs.projection = 
 		shaderInstanceGetUniformLocation(shaders.focus.program.vertexShader, "projection");
 	shaders.focus.locs.blockPos = 
 		shaderInstanceGetUniformLocation(shaders.focus.program.vertexShader, "blockPos");
+
+	shaders.sky.dvlb = DVLB_ParseFile((u32*)sky_shbin, sky_shbin_size);
+	shaderProgramInit(&shaders.sky.program);
+	shaderProgramSetVsh(&shaders.sky.program, &shaders.sky.dvlb->DVLE[0]);
+	C3D_BindProgram(&shaders.sky.program);
+
+	shaders.sky.locs.projection = 
+		shaderInstanceGetUniformLocation(shaders.sky.program.vertexShader, "projection");
+}
+
+const int skyW = 16;
+const int skyH = 10;
+static_assert(skyH * skyW + 1 < 256);
+
+struct skyVertex {
+	float x;
+	float y; 
+	float z;
+	u32 color;
+};
+int skyIndexOffset;
+int skyIndexCount;
+
+// 0..1 angle from horizon
+u32 skyColorAt(float angle) {
+
+	float a = 1 - angle;
+
+	float r = pow(a, 10) * 0.7f + 0.1f;
+    float g = pow(a, 5) * 0.7f + 0.1f;
+    float b = pow(a, 2) * 0.6f + 0.3f;
+    
+	int rr = r * 255;
+	int gg = g * 255;
+	int bb = b * 255;
+
+	return (0xff << 24 | bb << 16 | gg << 8 | rr);
+}
+
+void generateSky() {
+
+	std::array<skyVertex, skyH * skyW + 1> vertices;
+	std::vector<u8> indices;
+
+	for (int y = 0; y < skyH; ++y) {
+
+		float angle = std::pow(((float)y) / skyH, 3);	
+		float ay = angle * M_PI_2;
+		float fy = std::sin(ay);
+		float fx = std::cos(ay);
+		u32 color = skyColorAt(angle);
+		for (int x = 0; x < skyW; ++x) {
+			float at = (x/* - y * 0.5f*/) * M_TAU / skyW; // unskew it a bit, doubt it will do much
+			vertices[x + y * skyW] = { 
+				std::sin(at) * fx,
+				std::cos(at) * fx,
+				fy,
+				color
+			};
+		}
+	}
+
+	vertices[skyH * skyW] = { 0, 0, 1, skyColorAt(1) };
+
+	for (int y = 0; y < (skyH-1); ++y) {
+		for (int x = 0; x < skyW; ++x) {
+			int x2 = (x + 1) % skyW;
+			int y2 = y + 1;
+			
+			indices.push_back(x + y * skyW);
+			indices.push_back(x2 + y * skyW);
+			indices.push_back(x2 + y2 * skyW);
+			
+			indices.push_back(x + y * skyW);
+			indices.push_back(x2 + y2 * skyW);
+			indices.push_back(x + y2 * skyW);
+		}
+	}
+
+	int dy = (skyH - 1) * skyW;
+	int dy2 = skyH * skyW;
+	
+	for (int x = 0; x < skyW; ++x) {
+		int x2 = (x + 1) % skyW;
+		indices.push_back(x + dy);
+		indices.push_back(x2 + dy);
+		indices.push_back(dy2);
+	}
+
+	skyIndexOffset = vertices.size() * sizeof(vertices);
+	skyIndexCount = indices.size();
+	skyvbo = linearAlloc(skyIndexOffset + skyIndexCount);
+	memcpy(skyvbo, vertices.data(), skyIndexOffset);
+	memcpy((u8*)skyvbo + skyIndexOffset, indices.data(), skyIndexCount);
+	BufInfo_Init(&skyBuffer);
+	BufInfo_Add(&skyBuffer, skyvbo, sizeof(skyVertex), 2, 0x10);
 }
 
 void resourceInit() {
@@ -195,6 +300,10 @@ void resourceInit() {
 			
 	AttrInfo_Init(&vertexLayouts.focus);
 	AttrInfo_AddLoader(&vertexLayouts.focus, 0, GPU_FLOAT, 3); // v0=position
+
+	AttrInfo_Init(&vertexLayouts.sky);
+	AttrInfo_AddLoader(&vertexLayouts.sky, 0, GPU_FLOAT, 3); // v0=position
+	AttrInfo_AddLoader(&vertexLayouts.sky, 1, GPU_UNSIGNED_BYTE, 4); // v1=color
 
 	// todo optimize it with arrays or something
 	if (!loadTextureFromMem(&textures[0], nullptr, cursor_t3x, cursor_t3x_size))
@@ -224,13 +333,13 @@ void resourceInit() {
 	// Configure the first fragment shading substage to blend the texture color with
 	// the vertex color (calculated by the vertex shader using a lighting algorithm)
 	// See https://www.opengl.org/sdk/docs/man2/xhtml/glTexEnv.xml for more insight
-	C3D_TexEnvInit(&texEnvs.block);
-	C3D_TexEnvSrc(&texEnvs.block, C3D_Both, GPU_TEXTURE0, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
-	C3D_TexEnvFunc(&texEnvs.block, C3D_Both, GPU_MODULATE);
+	C3D_TexEnvInit(&texEnvs.textured);
+	C3D_TexEnvSrc(&texEnvs.textured, C3D_Both, GPU_TEXTURE0, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
+	C3D_TexEnvFunc(&texEnvs.textured, C3D_Both, GPU_MODULATE);
 
-	C3D_TexEnvInit(&texEnvs.focus);
-	C3D_TexEnvSrc(&texEnvs.focus, C3D_Both, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
-	C3D_TexEnvFunc(&texEnvs.focus, C3D_Both, GPU_REPLACE);
+	C3D_TexEnvInit(&texEnvs.solid);
+	C3D_TexEnvSrc(&texEnvs.solid, C3D_Both, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR, GPU_PRIMARY_COLOR);
+	C3D_TexEnvFunc(&texEnvs.solid, C3D_Both, GPU_REPLACE);
 
 	focusvbo = linearAlloc(3*4*8 + 2*3*6);
 	memcpy(focusvbo, focusVtx, 4*3*8);
@@ -260,6 +369,7 @@ void renderInit() {
 	FogLut_Exp(&fog, 0.02f, 1.5f, 0.2f, farPlane);
 
 	shaderInit();
+	generateSky();
 	resourceInit();
 }
 
@@ -291,12 +401,6 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 
 	/// --- CALCULATE VIEW --- ///
 
-	C3D_FogGasMode(GPU_FOG, GPU_PLAIN_DENSITY, false);
-	C3D_FogColor(0xD8B068);
-	C3D_FogLutBind(&fog);
-
-	C3D_CullFace(GPU_CULL_BACK_CCW);
-
 	C3D_Mtx modelView;
 	Mtx_Identity(&modelView);
 
@@ -307,21 +411,62 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 
 	Mtx_Translate(&modelView, -camera.x, -camera.y, -camera.z, true);
 
+	C3D_Mtx perspective;
 	Mtx_PerspStereoTilt(
-		&projection, 
+		&perspective, 
 		C3D_AngleFromDegrees(70.0f), 
 		C3D_AspectRatioTop, 
 		0.2f, farPlane, 
 		iod, 1.5f, false
 		);
 
-	C3D_Mtx combined;
-	Mtx_Multiply(&combined, &projection, &modelView);
-	projection = combined;
+	C3D_Mtx localView;
+	Mtx_Identity(&localView);
+	Mtx_RotateX(&localView, ry, true);
+	Mtx_RotateY(&localView, rx, true);
+	Mtx_RotateX(&localView, -M_PI/2, true);
+
+	C3D_Mtx projection;
+	Mtx_Multiply(&projection, &perspective, &modelView);
+
+	C3D_Mtx projectionSky;
+	Mtx_Multiply(&projectionSky, &perspective, &localView);
+
+	/// --- DRAW SKY --- ///
+
+	C3D_TexBind(0, nullptr);
+	C3D_FogLutBind(nullptr);
+	C3D_SetTexEnv(0, &texEnvs.solid);
+	C3D_AlphaBlend(
+		GPU_BLEND_ADD, GPU_BLEND_ADD, 
+		GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, 
+		GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA
+	);
+	C3D_CullFace(GPU_CULL_NONE);
+	C3D_DepthTest(false, GPU_GREATER, GPU_WRITE_COLOR);
+
+	C3D_BindProgram(&shaders.sky.program);
+	C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaders.sky.locs.projection, &projectionSky);
+
+	C3D_SetAttrInfo(&vertexLayouts.sky);
+	C3D_SetBufInfo(&skyBuffer);
+
+	C3D_DrawElements(
+		GPU_TRIANGLES, skyIndexCount, C3D_UNSIGNED_BYTE, 
+		(u8*)skyvbo + skyIndexOffset
+	);
 
 	/// --- SETUP BLOCK RENDERING --- ///
 
-	C3D_SetTexEnv(0, &texEnvs.block);
+	C3D_CullFace(GPU_CULL_BACK_CCW);
+
+	C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
+
+	C3D_FogGasMode(GPU_FOG, GPU_PLAIN_DENSITY, false);
+	C3D_FogColor(0xB29999);
+	C3D_FogLutBind(&fog);
+
+	C3D_SetTexEnv(0, &texEnvs.textured);
 	C3D_AlphaBlend(
 		GPU_BLEND_ADD, GPU_BLEND_ADD, 
 		GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, 
@@ -342,7 +487,7 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 	int chY = static_cast<int>(camera.y) >> chunkBits;
 	int chZ = static_cast<int>(camera.z) >> chunkBits;
 	int maxDist2 = renderDistance*renderDistance;
-
+	
 	/// --- DRAW BLOCKS --- ///
 
 	int count = 0;
@@ -392,7 +537,7 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 	C3D_FogLutBind(nullptr);
 
 	if (focus) {
-		C3D_SetTexEnv(0, &texEnvs.focus);
+		C3D_SetTexEnv(0, &texEnvs.solid);
 		C3D_AlphaBlend(
 			GPU_BLEND_ADD, GPU_BLEND_ADD,
 			GPU_SRC_ALPHA, GPU_ONE, 
@@ -474,6 +619,11 @@ void renderExit() {
 	DVLB_Free(shaders.block.dvlb);
 	shaderProgramFree(&shaders.focus.program);
 	DVLB_Free(shaders.focus.dvlb);  
+	shaderProgramFree(&shaders.sky.program);
+	DVLB_Free(shaders.sky.dvlb);  
+
+	linearFree(skyvbo);
+	linearFree(focusvbo);
 
 	// todo: verify if there are other resources to free
 	

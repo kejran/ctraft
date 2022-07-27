@@ -63,3 +63,4 @@ struct timeit {
 		printf("%s: %fms\n", name_, (end - start_) * invTickRate * 1000);
 	}
 };
+#define CONSOLE
