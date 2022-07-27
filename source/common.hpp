@@ -47,6 +47,8 @@ static constexpr int textureCount = 9;
 
 static constexpr float invTickRate = 1.0f / SYSCLOCK_ARM11;
 
+constexpr int renderDistance = 3;
+
 struct timeit {
 	char const *name_;
 	u32 start_;
