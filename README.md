@@ -1,4 +1,7 @@
 # ctraft 
+
+![preview](https://github.com/kejran/ctraft/blob/master/screenshot.png?raw=true)
+
 A simple proof-of-concept, barebones minecraft engine clone running on Nintendo 3DS. Written mostly as a practice while learning `libctru` & `citro3d`. 
 
 ## Specifics
