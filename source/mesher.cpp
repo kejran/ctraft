@@ -7,12 +7,12 @@
 /*
     3---2
 	| / |
-	0---1 
+	0---1
 
 	0-1-2 0-2-3
 
 (top view)
-	
+
     7----6
    /|    |
   3 |  2 |
@@ -34,7 +34,7 @@ static const u8vec3 basicCubeVs[8] = {
 	{1, 0, 0},
 	{1, 1, 0},
 	{0, 1, 0},
-	
+
 	{0, 0, 1},
 	{1, 0, 1},
 	{1, 1, 1},
@@ -73,142 +73,185 @@ inline int _rev(int uv, int dir) {
 	return uv ? dir : -dir;
 }
 
-// todo handle allocation errors
+INLINE s8vec3 _V8(int x, int y, int z) {
+	return {
+		static_cast<s8>(x),
+		static_cast<s8>(y),
+		static_cast<s8>(z)
+	};
+}
 
-MesherAllocation meshChunk(expandedChunk const &cch) {
-	std::vector<vertex> vertices;
+struct ForwardAccessor {
+	INLINE static int at(int value) { return value; }
+	INLINE static int atV(int value) { return value; }
+	INLINE static int atN(int value) { return value + 1; }
+	INLINE static int dir() { return 1; }
+};
+
+struct ReverseAccessor {
+	INLINE static int at(int value) { return chunkSize - 1 - value; }
+	INLINE static int atV(int value) { return chunkSize - value; }
+	INLINE static int atN(int value) { return chunkSize - 1 - value; }
+	INLINE static int dir() { return -1; }
+};
+
+template <typename DirX, typename DirY, typename DirZ>
+struct FaceXAccessor {
+	INLINE static s8vec3 at(int u, int v, int n) {
+		return _V8(DirX::at(n), DirY::at(u), DirZ::at(v));
+	}
+	INLINE static s8vec3 atV(int u, int v, int n) {
+		return _V8(DirX::atN(n), DirY::atV(u), DirZ::atV(v));
+	}
+};
+
+template  <typename DirX, typename DirY, typename DirZ>
+struct FaceYAccessor {
+	INLINE static s8vec3 at(int u, int v, int n) {
+		return _V8(DirX::at(u), DirY::at(n), DirZ::at(v));
+	}
+	INLINE static s8vec3 atV(int u, int v, int n) {
+		return _V8(DirX::atV(u), DirY::atN(n), DirZ::atV(v));
+	}
+};
+
+template  <typename DirX, typename DirY, typename DirZ>
+struct FaceZAccessor {
+	INLINE static s8vec3 at(int u, int v, int n) {
+		return _V8(DirX::at(u), DirY::at(v), DirZ::at(n));
+	}
+	INLINE static s8vec3 atV(int u, int v, int n) {
+		return _V8(DirX::atV(u), DirY::atV(v), DirZ::atN(n));
+	}
+};
+
+template <int t>
+struct AxisAccessor {};
+template <> struct AxisAccessor<0> : FaceXAccessor<ReverseAccessor, ReverseAccessor, ForwardAccessor> {};
+template <> struct AxisAccessor<1> : FaceXAccessor<ForwardAccessor, ForwardAccessor, ForwardAccessor> {};
+template <> struct AxisAccessor<2> : FaceYAccessor<ForwardAccessor, ReverseAccessor, ForwardAccessor> {};
+template <> struct AxisAccessor<3> : FaceYAccessor<ReverseAccessor, ForwardAccessor, ForwardAccessor> {};
+template <> struct AxisAccessor<4> : FaceZAccessor<ReverseAccessor, ForwardAccessor, ReverseAccessor> {};
+template <> struct AxisAccessor<5> : FaceZAccessor<ForwardAccessor, ForwardAccessor, ForwardAccessor> {};
+
+template <int s>
+INLINE void meshFace(
+	expandedChunk const &cch,
+	std::vector<vertex> &vertices,
+	std::array<std::vector<u16>, textureCount> &isPerTexture
+) {
+	using a = AxisAccessor<s>;
 	std::array<u16, (chunkSize+1) * (chunkSize+1)> vertexCache;
-	std::vector<u16> indicesFlat;
-	std::array<std::vector<u16>, textureCount> isPerTexture;
-	
-	// todo refactor this using templates + lambda accessor for each side  
 
-// side 2 & 4 works
-	for (int s = 0; s < 6; ++s) { // side
-// int s = 0;{		
-		// ghetto matrix math
-		int8_t normX = 0, normY = 0, normZ = 0;
-		int8_t texUX = 0, texUY = 0, texUZ = 0;
-		int8_t texVX = 0, texVY = 0, texVZ = 0;
-		switch (s) {
-			case 0: normX = -1; texUY = -1; texVZ = +1; break;
-			case 1: normX = +1; texUY = +1; texVZ = +1; break;
-			case 2: normY = -1; texUX = +1; texVZ = +1; break;
-			case 3: normY = +1; texUX = -1; texVZ = +1; break;
-			case 4: normZ = -1; texUX = -1; texVY = +1; break;
-			case 5: normZ = +1; texUX = +1; texVY = +1; break;
-			default: break;
-		}
+	for (int l = 0; l < chunkSize; ++l) { // layer
 
-		u8 nx = (texUX < 0 || texVX < 0) + (normX > 0);
-		u8 ny = (texUY < 0 || texVY < 0) + (normY > 0);
-		u8 nz = (texUZ < 0 || texVZ < 0) + (normZ > 0); 
+		for (int i = 0; i < (chunkSize+1) * (chunkSize+1); ++i)
+			vertexCache[i] = 0xffff;
 
-		for (int l = 0; l < chunkSize; ++l) { // layer
+		for (int v = 0; v < chunkSize; ++v) {
+			for (int u = 0; u < chunkSize; ++u) {
+				uint16_t vidxs[4];
 
-			for (int i = 0; i < (chunkSize+1) * (chunkSize+1); ++i)
-				vertexCache[i] = 0xffff;
+				// this is block position in the grid
+				auto idx = a::at(u, v, l);
+				u16 self = cch[idx.z+1][idx.y+1][idx.x+1];
 
-			u8 lx = _inm(normX, l); u8 ly = _inm(normY, l); u8 lz = _inm(normZ, l);			
-			u8 vx = _ins(texVX); u8 vy = _ins(texVY); u8 vz = _ins(texVZ);
-			for (int v = 0; v < chunkSize; ++v) {
-				u8 ux = _ins(texUX); u8 uy = _ins(texUY); u8 uz = _ins(texUZ);
-				for (int u = 0; u < chunkSize; ++u) {
-					uint16_t vidxs[4];
-
-					// this is block position in the grid
-					u8 x = lx + ux + vx;
-					u8 y = ly + uy + vy;
-					u8 z = lz + uz + vz;
-					
-					u16 self = cch[z+1][y+1][x+1];
-					bool draw = self > 0;
-					if (draw) {
-						// neighbouring block of this face
-						s8 sx = x + normX + 1;
-						s8 sy = y + normY + 1;
-						s8 sz = z + normZ + 1;
-						u16 other = cch[sz][sy][sx];
-						draw = other == 0;
-					}
-					if (draw) {
-						for (int i = 0; i < 4; ++i) {
-							// vertex positon in its face coordinates
-							auto uv = basicCubeUVs[i]; 
-							// vertex position in chunk plane
-							auto guv = uv;
-							guv.x += u; guv.y += v;
-							auto cidx = guv.x + guv.y * (chunkSize+1);
-							auto vidx = vertexCache[cidx];
-							if (vidx == 0xffff) {
-								vidx = static_cast<u16>(vertices.size()); 
-								vertexCache[cidx] = vidx;
-								auto &n = vertices.emplace_back();
-								// position of the vertex
-								u8 _x = x + nx;
-								u8 _y = y + ny;
-								u8 _z = z + nz;
-								if (uv.x) { _x += texUX; _y += texUY; _z += texUZ; }
-								if (uv.y) { _x += texVX; _y += texVY; _z += texVZ; }
-
-								n.position = { _x, _y, _z };
-								n.texcoord = guv;
-								n.normal = { normX, normY, normZ };
-
-								int aoX = x + 1 + normX;
-								int aoY = y + 1 + normY;
-								int aoZ = z + 1 + normZ;
-								int aoUX = _rev(uv.x, texUX); 
-								int aoUY = _rev(uv.x, texUY); 
-								int aoUZ = _rev(uv.x, texUZ); 
-								int aoVX = _rev(uv.y, texVX); 
-								int aoVY = _rev(uv.y, texVY); 
-								int aoVZ = _rev(uv.y, texVZ);
-
-								// https://0fps.net/2013/07/03/ambient-occlusion-for-minecraft-like-worlds/
-								bool side1 = cch[aoZ + aoUZ][aoY + aoUY][aoX + aoUX] > 0; 
-								bool side2 = cch[aoZ + aoVZ][aoY + aoVY][aoX + aoVX] > 0; 
-								int ambient = 1; // corners should not be pure black
-								if (side1 && side2)
-									n.ao = ambient;
-								else {
-									bool corner = cch[aoZ + aoUZ + aoVZ][aoY + aoUY + aoVY][aoX + aoUX + aoVX]; 
-									n.ao = 3 + ambient - (side1 + side2 + corner);
-								}
-							}
-
-							vidxs[i] = vidx;
-						}
-						auto vis = blockVisuals[self - 1];
-						auto &vec = isPerTexture[vis[s]];
-
-						if (
-							vertices[vidxs[0]].ao + vertices[vidxs[2]].ao > 
-							vertices[vidxs[1]].ao + vertices[vidxs[3]].ao
-						){	
-							vec.push_back(vidxs[0]);
-							vec.push_back(vidxs[1]);
-							vec.push_back(vidxs[2]);
-							vec.push_back(vidxs[0]);
-							vec.push_back(vidxs[2]);
-							vec.push_back(vidxs[3]);
-						} else {
-							vec.push_back(vidxs[1]);
-							vec.push_back(vidxs[2]);
-							vec.push_back(vidxs[3]);
-							vec.push_back(vidxs[1]);
-							vec.push_back(vidxs[3]);
-							vec.push_back(vidxs[0]);
-						}
-					}
-					ux += texUX; uy += texUY; uz += texUZ;	
+				bool draw = self > 0;
+				if (draw) {
+					// neighbouring block of this face
+					auto normIdx = a::at(u, v, l + 1);
+					u16 other = cch[normIdx.z+1][normIdx.y+1][normIdx.x+1];
+					draw = other == 0;
 				}
-				vx += texVX; vy += texVY; vz += texVZ;
+				if (draw) {
+					for (int i = 0; i < 4; ++i) {
+						// vertex positon in its face coordinates
+						auto uv = basicCubeUVs[i];
+						// vertex position in chunk plane
+						auto guv = uv;
+						guv.x += u; guv.y += v;
+
+						auto cacheIdx = guv.x + guv.y * (chunkSize+1);
+						auto vertexIdx = vertexCache[cacheIdx];
+
+						if (vertexIdx == 0xffff) {
+							vertexIdx = static_cast<u16>(vertices.size());
+							vertexCache[cacheIdx] = vertexIdx;
+							auto &n = vertices.emplace_back();
+
+							// position of the vertex
+							auto coords = a::atV(u + uv.x, v + uv.y, l);
+
+							n.position = {
+								static_cast<u8>(coords.x),
+								static_cast<u8>(coords.y),
+								static_cast<u8>(coords.z)
+							};
+							n.texcoord = guv;
+							// note: we do not really need normals anymore
+							n.normal = { 0, 0, 0 };
+
+							auto u1 = uv.x ? 1 : -1;
+							auto v1 = uv.y ? 1 : -1;
+
+							auto dir1 = a::at(u + u1, v, l + 1);
+							auto dir2 = a::at(u, v + v1, l + 1);
+
+							// https://0fps.net/2013/07/03/ambient-occlusion-for-minecraft-like-worlds/
+							bool side1 = cch[dir1.z+1][dir1.y+1][dir1.x+1] > 0;
+							bool side2 = cch[dir2.z+1][dir2.y+1][dir2.x+1] > 0;
+							int ambient = 1; // corners should not be pure black
+							if (side1 && side2)
+								n.ao = ambient;
+							else {
+								auto dirs = a::at(u + u1, v + v1, l + 1);
+								bool corner = cch[dirs.z+1][dirs.y+1][dirs.x+1];
+								n.ao = 3 + ambient - (side1 + side2 + corner);
+							}
+						}
+
+						vidxs[i] = vertexIdx;
+					}
+					auto vis = blockVisuals[self - 1];
+					auto &vec = isPerTexture[vis[s]];
+
+					if (
+						vertices[vidxs[0]].ao + vertices[vidxs[2]].ao >
+						vertices[vidxs[1]].ao + vertices[vidxs[3]].ao
+					){
+						vec.push_back(vidxs[0]);
+						vec.push_back(vidxs[1]);
+						vec.push_back(vidxs[2]);
+						vec.push_back(vidxs[0]);
+						vec.push_back(vidxs[2]);
+						vec.push_back(vidxs[3]);
+					} else {
+						vec.push_back(vidxs[1]);
+						vec.push_back(vidxs[2]);
+						vec.push_back(vidxs[3]);
+						vec.push_back(vidxs[1]);
+						vec.push_back(vidxs[3]);
+						vec.push_back(vidxs[0]);
+					}
+				}
 			}
 		}
 	}
+}
+
+MesherAllocation meshChunk(expandedChunk const &cch) {
+	std::vector<vertex> vertices;
+	std::array<std::vector<u16>, textureCount> isPerTexture;
+
+	meshFace<0>(cch, vertices, isPerTexture);
+	meshFace<1>(cch, vertices, isPerTexture);
+	meshFace<2>(cch, vertices, isPerTexture);
+	meshFace<3>(cch, vertices, isPerTexture);
+	meshFace<4>(cch, vertices, isPerTexture);
+	meshFace<5>(cch, vertices, isPerTexture);
 
 	MesherAllocation result;
+	std::vector<u16> indicesFlat;
 
 	for (int i = 0; i < textureCount; ++i) {
 		auto &m = isPerTexture[i];
@@ -222,15 +265,15 @@ MesherAllocation meshChunk(expandedChunk const &cch) {
 		}
 	}
 
-	result.vertexCount = 0; 
+	result.vertexCount = 0;
 	result.indices = nullptr;
-	result.vertices = nullptr;	
+	result.vertices = nullptr;
 
 	if (vertices.size() || indicesFlat.size()) {
 
 		result.vertexCount = vertices.size();
 		result.vertices = linearAlloc(result.vertexCount * sizeof(vertex));
-		if (result.vertices == nullptr) 
+		if (result.vertices == nullptr)
 		{
 			printf("failed linear allocation\n");
 			return result;
@@ -251,7 +294,7 @@ MesherAllocation meshChunk(expandedChunk const &cch) {
 
 // todo: we probably do not need this one with the task system
 MesherAllocation meshChunk(chunk const &ch, std::array<chunk *, 6> const &sides) {
-	
+
 	// -x, +x, -y, +y, -z, +z
 	expandedChunk cch = {0};
 	expandChunk(ch, sides, cch);
@@ -263,7 +306,7 @@ void expandChunk(chunk const &ch, std::array<chunk *, 6> const &sides, expandedC
 	for (int z = 0; z < chunkSize; ++z)
 		for (int y = 0; y < chunkSize; ++y)
 			for (int x = 0; x < chunkSize; ++x)
-				ex[z + 1][y + 1][x + 1] = ch[z][y][x]; 
+				ex[z + 1][y + 1][x + 1] = ch[z][y][x];
 
 	// organise this somehow...
 	if (sides[0]) // -x
