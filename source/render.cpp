@@ -404,7 +404,11 @@ bool inFrustum(C3D_Mtx const &mtx, s16vec3 v) {
 	return !out;
 }
 
+int chunksDrawn;
+
 void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod) {
+
+	u32 lastFrameTime;
 
 	/// --- CALCULATE VIEW --- ///
 
@@ -497,7 +501,7 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 	
 	/// --- DRAW BLOCKS --- ///
 
-	int count = 0;
+	chunksDrawn = 0;
 	for (auto [idx, meta]: world) {
 		int dx = idx.x-chX;
 		int dy = idx.y-chY;
@@ -511,7 +515,7 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 			meta.allocation.vertexCount && 
 			(distance2 < 4 || inFrustum(projection, idx)) // frustum is buggy, always immediate neighbourhood 
 		) {
-			++count;
+			++chunksDrawn;
 			C3D_SetBufInfo(&meta.vertexBuffer);
 			C3D_FVUnifSet(
 				GPU_VERTEX_SHADER, 
@@ -533,12 +537,7 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 			}
 		}
 	}
-	#ifdef CONSOLE
-		static int i = 0;
-		if (i++ == 30) i = 0;
-		if (i == 0) printf("Chunks drawn: %i\n", count);
-	#endif
-
+	
 	/// --- DRAW FOCUS HIGHLIGHT --- ///
 
 	C3D_FogLutBind(nullptr);
@@ -570,6 +569,10 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 	}
 }
 
+u32 frameStartTimestamp;
+u32 lastPrintTimestamp;
+u32 debugDelay = SYSCLOCK_ARM11 / 3; // 3hz
+
 void render(fvec3 &playerPos, float rx, float ry, vec3<s32> *focus, float depthSlider) {
 	float iod = depthSlider / 5; 
 	bool should3d = iod > 0.01f;
@@ -581,9 +584,13 @@ void render(fvec3 &playerPos, float rx, float ry, vec3<s32> *focus, float depthS
 	fvec3 camera = playerPos;
 	camera.z += eyeHeight;
 
+	u32 timeBeforeSync = svcGetSystemTick();
+	u32 nextTimeAfterSync;
+
 	// Render the scene
 	C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
 	{
+		nextTimeAfterSync = svcGetSystemTick();
 		// left or main buffer
 		C3D_RenderTargetClear(targetLeft, C3D_CLEAR_ALL, CLEAR_COLOR, 0);
 		C3D_FrameDrawOn(targetLeft);
@@ -615,6 +622,29 @@ void render(fvec3 &playerPos, float rx, float ry, vec3<s32> *focus, float depthS
 		}
 	}
 	C3D_FrameEnd(0);
+
+	if (targetBottom == nullptr) {
+		u32 now = svcGetSystemTick();
+		if ((now - lastPrintTimestamp) > debugDelay) { 
+			lastPrintTimestamp += debugDelay; // do so it does not drift, not like it matters
+			if ((now - lastPrintTimestamp) > debugDelay) // if the diff is too large, reset
+				lastPrintTimestamp = now;
+
+			float fdiff = timeBeforeSync - frameStartTimestamp;
+			fdiff *= invTickRate;
+			float ftime = fdiff * 1000;
+			int fbudget = std::ceil(fdiff * 60 * 100);
+			int gpu = std::ceil(C3D_GetDrawingTime()*6);
+			printf("\x1b[1;1f");
+			printf("Frame time:   %5.2fms  \n", ftime);
+			printf("Frame budget: %3i%%  \n", fbudget);
+			printf("Draw time   : %3i%%  \n", gpu);
+			printf("Chunks drawn: %3i  \n", chunksDrawn);
+		}
+	}
+
+	frameStartTimestamp = nextTimeAfterSync;
+
 }
 
 void renderExit() {

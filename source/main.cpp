@@ -679,7 +679,7 @@ int main() {
 
 	hidScanInput();
 	u32 keys = hidKeysHeld();
-	if (keys & KEY_DDOWN)
+	if (keys & KEY_DUP)
 		console = true;
 
 	renderInit(!console);
