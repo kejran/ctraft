@@ -616,47 +616,90 @@ void updateWorld(fvec3 focus) {
 					tryInitChunkAndMesh(x, y, z);
 }
 
+enum class RunMode {
+	Loading,
+	Running,
+	Closing
+};
+
+RunMode runMode;
+
+u64 tick; 
+	
+void loadMapLoop() {
+
+	processWorkerResults();
+
+	bool ready = true;
+	for (int z = -1; z <= 1; ++z)
+		for (int y = -2; y <= 2; ++y)
+			for (int x = -2; x <= 2; ++x)
+				if (!tryInitChunkAndMesh(x, y, z))
+					ready = false;
+
+	renderLoading();
+
+	if (ready)
+		runMode = RunMode::Running;
+}
+
+void mainLoop() {
+// do it before input and vsync wait, consider player input
+
+	processWorkerResults();
+	scheduleMarkedRemeshes();
+	updateWorld(player.pos);
+
+	hidScanInput();
+
+	float slider = osGet3DSliderState();
+
+	handleTouch();
+
+	// Respond to user input
+	u32 kDown = hidKeysDown();
+	if (kDown & KEY_START)
+		runMode = RunMode::Closing;
+
+	u64 newTick = svcGetSystemTick();
+	u32 tickDelta = newTick - tick;
+	tick = newTick;
+	float delta = tickDelta * invTickRate;
+	if (delta > 0.05f) // aim for minimum 20 fps, anything less is a spike
+		delta = 0.05f; 
+
+	handlePlayer(delta);
+
+	render(player.pos, angleX, angleY, drawFocus ? &playerFocus : nullptr, slider);
+}
+
 int main() {
 
-	renderInit();
+	bool console = false;
+
+	hidScanInput();
+	u32 keys = hidKeysHeld();
+	if (keys & KEY_DDOWN)
+		console = true;
+
+	renderInit(!console);
 	startWorker();
 
-	u64 tick = svcGetSystemTick(); 
-	
+	tick = svcGetSystemTick();
+
 	player.pos.z = 12;
 	player.pos.x = -5;
-	player.pos.y = 5;	
+	player.pos.y = 5;
 
-	// Main loop
-	while (aptMainLoop()) {
-
-		// do it before input and vsync wait, consider player input
-		processWorkerResults();
-		scheduleMarkedRemeshes();
-		updateWorld(player.pos);
-
-		hidScanInput();
-
-		float slider = osGet3DSliderState();
-
-		handleTouch();
-
-		// Respond to user input
-		u32 kDown = hidKeysDown();
-		if (kDown & KEY_START)
-			break; // break in order to return to hbmenu
-
-		u64 newTick = svcGetSystemTick();
-		u32 tickDelta = newTick - tick;
-		tick = newTick;
-		float delta = tickDelta * invTickRate;
-		if (delta > 0.05f) // aim for minimum 20 fps, anything less is a spike
-			delta = 0.05f; 
-
-		handlePlayer(delta);
-
-		render(player.pos, angleX, angleY, drawFocus ? &playerFocus : nullptr, slider);
-	}
+	runMode = RunMode::Loading;
+	while (aptMainLoop() && runMode != RunMode::Closing)  
+		switch (runMode) {
+			case RunMode::Loading:
+				loadMapLoop(); break;
+			case RunMode::Running:
+				mainLoop(); break;
+			default: runMode = RunMode::Closing;
+		}
 
 	stopWorker(); // halt processing, submit leftover jobs as results
 	processWorkerResults(); // accept all results so they do not leak

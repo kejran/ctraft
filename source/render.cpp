@@ -108,7 +108,7 @@ const uint8_t basicCubeIs[] = {
 	4, 5, 6, 4, 6, 7,
 };
 
-C3D_RenderTarget *targetBottom, *targetLeft, *targetRight;
+C3D_RenderTarget *targetBottom = nullptr, *targetLeft, *targetRight;
 
 C3D_FogLut fog;
 
@@ -151,6 +151,9 @@ void bottomUI() {
 			1);
 	}
 }
+
+C2D_Text loadText;
+C2D_TextBuf loadTextBuf;
 
 // Helper function for loading a texture from memory
 bool loadTextureFromMem(C3D_Tex* tex, C3D_TexCube* cube, const void* data, size_t size) {
@@ -350,17 +353,17 @@ void resourceInit() {
 
 }
 
-void renderInit() {
+void renderInit(bool bottomScreen) {
 
 	gfxInitDefault();
 	C3D_Init(C3D_DEFAULT_CMDBUF_SIZE);
 	C2D_Init(C2D_DEFAULT_MAX_OBJECTS);
-	#ifdef CONSOLE
+	if (!bottomScreen)
 		consoleInit(GFX_BOTTOM, NULL);
-	#else
+	else {
 		targetBottom = C3D_RenderTargetCreate(240, 320, GPU_RB_RGBA8, GPU_RB_DEPTH16);
 		C3D_RenderTargetSetOutput(targetBottom, GFX_BOTTOM, GFX_LEFT, DISPLAY_TRANSFER_FLAGS);
-	#endif
+	}
 	targetLeft  = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
 	targetRight = C3D_RenderTargetCreate(240, 400, GPU_RB_RGBA8, GPU_RB_DEPTH24_STENCIL8);
 	C3D_RenderTargetSetOutput(targetLeft,  GFX_TOP, GFX_LEFT,  DISPLAY_TRANSFER_FLAGS);
@@ -371,6 +374,10 @@ void renderInit() {
 	shaderInit();
 	generateSky();
 	resourceInit();
+
+	loadTextBuf = C2D_TextBufNew(32);
+	C2D_TextParse(&loadText, loadTextBuf, "loading...");
+	C2D_TextOptimize(&loadText);
 }
 
 // this is not working well... debug it later, too tired for this now
@@ -598,14 +605,14 @@ void render(fvec3 &playerPos, float rx, float ry, vec3<s32> *focus, float depthS
 		}
 
 		// bottom buffer
-		#ifndef CONSOLE
+		if (targetBottom) { // skip drawing if using console
 			C3D_RenderTargetClear(targetBottom, C3D_CLEAR_ALL, 0x222222ff, 0);
 			C3D_FrameDrawOn(targetBottom);
 			C2D_SceneTarget(targetBottom);
 			C2D_Prepare();
 			bottomUI();
 			C2D_Flush();
-		#endif
+		}
 	}
 	C3D_FrameEnd(0);
 }
@@ -631,4 +638,28 @@ void renderExit() {
 	C2D_Fini();	
 	gfxExit();
  
+}
+
+
+void renderLoading() {
+
+	C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
+	{
+		// left or main buffer
+		C3D_RenderTargetClear(targetLeft, C3D_CLEAR_ALL, 0x222222ff, 0);
+		C3D_FrameDrawOn(targetLeft);
+		C2D_SceneTarget(targetLeft);
+		C2D_Prepare();
+
+		float w, h;
+		C2D_TextGetDimensions(&loadText, 1, 1, &w, &h);
+		C2D_DrawText(&loadText, C2D_WithColor, 200-w/2, 120-h/2, 1, 1, 1, 0xeeeeeeff);
+
+		C2D_Flush();
+
+		// bottom buffer
+		if (targetBottom) // skip drawing if using console
+			C3D_RenderTargetClear(targetBottom, C3D_CLEAR_ALL, 0x222222ff, 0);
+	}
+	C3D_FrameEnd(0);
 }
