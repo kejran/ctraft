@@ -48,6 +48,7 @@ static constexpr int textureCount = 9;
 static constexpr float invTickRate = 1.0f / SYSCLOCK_ARM11;
 
 constexpr int renderDistance = 3;
+constexpr int zChunks = 2; // 5 chunks = 80 blocks of height total
 
 struct timeit {
 	char const *name_;

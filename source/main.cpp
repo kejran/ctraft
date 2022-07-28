@@ -257,9 +257,10 @@ u16 tryGetBlock(int x, int y, int z) {
 
 bool tryGetSides(int x, int y, int z, std::array<chunk *, 6> &out) {
 	auto _g = [&out](int i, int _x, int _y, int _z) -> bool {
-		// out[i] = nullptr; return true; // zero border ahahahah
-		// if (_z < -1 || _z > 1)
-		// 	return true; // todo: maybe this check should happen elsewhere?
+		if (_z < -zChunks || _z > zChunks) {
+			out[i] = nullptr;
+			return true;
+		}
 		auto *m = tryGetChunk(_x, _y, _z);
 		out[i] = m ? m->data : nullptr;
 		return out[i] != nullptr;
@@ -582,8 +583,8 @@ void processWorkerResults() {
 		}
 }
 
-static constexpr int distanceLoad = 3; // blocks to load, cage size 2n+1
-static constexpr int distanceUnload = 5; // blocks to unload, keep blocks in cage of 2n+1 
+static constexpr int distanceLoad = 5; // blocks to load, cage size 2n+1
+static constexpr int distanceUnload = 7; // blocks to unload, keep blocks in cage of 2n+1
 
 // note that a 1-chunk thick shell will generate outside the render cage since it is needed for meshing
 
@@ -610,8 +611,9 @@ void updateWorld(fvec3 focus) {
 
 	for (int z = chZ - distanceLoad; z <= chZ + distanceLoad; ++z)
 		for (int y = chY - distanceLoad; y <= chY + distanceLoad; ++y)
-			for (int x = chX - distanceLoad; x <= chX + distanceLoad; ++x)
-				tryInitChunkAndMesh(x, y, z);
+			for (int x = chX - distanceLoad; x <= chX + distanceLoad; ++x) 
+				if (z >= -zChunks && z <= zChunks)
+					tryInitChunkAndMesh(x, y, z);
 }
 
 int main() {

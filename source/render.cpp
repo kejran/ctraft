@@ -366,7 +366,7 @@ void renderInit() {
 	C3D_RenderTargetSetOutput(targetLeft,  GFX_TOP, GFX_LEFT,  DISPLAY_TRANSFER_FLAGS);
 	C3D_RenderTargetSetOutput(targetRight, GFX_TOP, GFX_RIGHT, DISPLAY_TRANSFER_FLAGS);
 
-	FogLut_Exp(&fog, 0.02f, 1.5f, 0.2f, farPlane);
+	FogLut_Exp(&fog, 0.01f, 1.5f, 0.2f, farPlane);
 
 	shaderInit();
 	generateSky();
