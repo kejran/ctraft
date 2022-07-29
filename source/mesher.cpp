@@ -52,27 +52,6 @@ static constexpr BlockVisual blockVisuals[] = {
 	{ 7, 7, 7, 7, 7, 7 }, // planks
 };
 
-// for first block in interation; v is -1/0/1
-inline int _ins(int value) {
-	if (value < 0)
-		return chunkSize + value;
-	else if (value > 0)
-		return value - 1;
-	else return 0;
-}
-
-inline int _inm(int dir, int position) {
-	if (dir < 0)
-		return chunkSize - position - 1;
-	else if (dir > 0)
-		return position;
-	else return 0;
-}
-
-inline int _rev(int uv, int dir) {
-	return uv ? dir : -dir;
-}
-
 INLINE s8vec3 _V8(int x, int y, int z) {
 	return {
 		static_cast<s8>(x),
@@ -313,22 +292,27 @@ void expandChunk(chunk const &ch, std::array<chunk *, 6> const &sides, expandedC
 		for (int z = 0; z < chunkSize; ++z)
 			for (int y = 0; y < chunkSize; ++y)
 				ex[z + 1][y + 1][0] = (*sides[0])[z][y][chunkSize-1];
+
 	if (sides[1]) // +x
 		for (int z = 0; z < chunkSize; ++z)
 			for (int y = 0; y < chunkSize; ++y)
 				ex[z + 1][y + 1][chunkSize+1] = (*sides[1])[z][y][0];
+
 	if (sides[2]) // -y
 		for (int z = 0; z < chunkSize; ++z)
 			for (int x = 0; x < chunkSize; ++x)
 				ex[z + 1][0][x + 1] = (*sides[2])[z][chunkSize-1][x];
+
 	if (sides[3]) // +y
 		for (int z = 0; z < chunkSize; ++z)
 			for (int x = 0; x < chunkSize; ++x)
 				ex[z + 1][chunkSize+1][x + 1] = (*sides[3])[z][0][x];
+
 	if (sides[4]) // -z
 		for (int y = 0; y < chunkSize; ++y)
 			for (int x = 0; x < chunkSize; ++x)
 				ex[0][y + 1][x + 1] = (*sides[4])[chunkSize-1][y][x];
+
 	if (sides[5]) // -z
 		for (int y = 0; y < chunkSize; ++y)
 			for (int x = 0; x < chunkSize; ++x)

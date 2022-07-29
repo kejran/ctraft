@@ -60,7 +60,7 @@ struct {
 	C3D_AttrInfo sky;
 } vertexLayouts;
 
-struct 
+struct
 {
 	C3D_TexEnv textured;
 	C3D_TexEnv solid;
@@ -122,10 +122,10 @@ void topUI() {
 	image.tex = &textures[0];
 	Tex3DS_SubTexture sub { 16, 16, 0, 0, 1, 1 };
 	image.subtex = &sub;
-	
+
 	C3D_AlphaBlend(
-		GPU_BLEND_ADD, GPU_BLEND_ADD, 
-		GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, 
+		GPU_BLEND_ADD, GPU_BLEND_ADD,
+		GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA,
 		GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA
 	);
 	int scale = 2;
@@ -145,9 +145,9 @@ void bottomUI() {
 		int x = i % 4;
 		int y = i / 4;
 		img.tex = &textures[getBlockVisual(i)[0] + 1]; // -Y
-		C2D_DrawImageAt(img, 
-			160 - (4 * spacing / 2) + (spacing - size) / 2 + x * spacing, 
-			120 - (2 * spacing / 2) + (spacing - size) / 2 + y * spacing, 
+		C2D_DrawImageAt(img,
+			160 - (4 * spacing / 2) + (spacing - size) / 2 + x * spacing,
+			120 - (2 * spacing / 2) + (spacing - size) / 2 + y * spacing,
 			1);
 	}
 }
@@ -164,25 +164,25 @@ bool loadTextureFromMem(C3D_Tex* tex, C3D_TexCube* cube, const void* data, size_
 	// Delete the t3x object since we don't need it
 	Tex3DS_TextureFree(t3x);
 	return true;
-}	
+}
 
 void shaderInit() {
-	
+
 	shaders.block.dvlb = DVLB_ParseFile((u32*)terrain_shbin, terrain_shbin_size);
 	shaderProgramInit(&shaders.block.program);
 	shaderProgramSetVsh(&shaders.block.program, &shaders.block.dvlb->DVLE[0]);
 	C3D_BindProgram(&shaders.block.program);
 
 	// Get the location of the uniforms
-	shaders.block.locs.projection = 
+	shaders.block.locs.projection =
 		shaderInstanceGetUniformLocation(shaders.block.program.vertexShader, "projection");
-	shaders.block.locs.lightVec = 
+	shaders.block.locs.lightVec =
 		shaderInstanceGetUniformLocation(shaders.block.program.vertexShader, "lightVec");
-	shaders.block.locs.lightClr = 
+	shaders.block.locs.lightClr =
 		shaderInstanceGetUniformLocation(shaders.block.program.vertexShader, "lightClr");
-	shaders.block.locs.material = 
+	shaders.block.locs.material =
 		shaderInstanceGetUniformLocation(shaders.block.program.vertexShader, "material");
-	shaders.block.locs.chunkPos = 
+	shaders.block.locs.chunkPos =
 		shaderInstanceGetUniformLocation(shaders.block.program.vertexShader, "chunkPos");
 
 	shaders.focus.dvlb = DVLB_ParseFile((u32*)focus_shbin, focus_shbin_size);
@@ -190,9 +190,9 @@ void shaderInit() {
 	shaderProgramSetVsh(&shaders.focus.program, &shaders.focus.dvlb->DVLE[0]);
 	C3D_BindProgram(&shaders.focus.program);
 
-	shaders.focus.locs.projection = 
+	shaders.focus.locs.projection =
 		shaderInstanceGetUniformLocation(shaders.focus.program.vertexShader, "projection");
-	shaders.focus.locs.blockPos = 
+	shaders.focus.locs.blockPos =
 		shaderInstanceGetUniformLocation(shaders.focus.program.vertexShader, "blockPos");
 
 	shaders.sky.dvlb = DVLB_ParseFile((u32*)sky_shbin, sky_shbin_size);
@@ -200,7 +200,7 @@ void shaderInit() {
 	shaderProgramSetVsh(&shaders.sky.program, &shaders.sky.dvlb->DVLE[0]);
 	C3D_BindProgram(&shaders.sky.program);
 
-	shaders.sky.locs.projection = 
+	shaders.sky.locs.projection =
 		shaderInstanceGetUniformLocation(shaders.sky.program.vertexShader, "projection");
 }
 
@@ -210,7 +210,7 @@ static_assert(skyH * skyW + 1 < 256);
 
 struct skyVertex {
 	float x;
-	float y; 
+	float y;
 	float z;
 	u32 color;
 };
@@ -225,7 +225,7 @@ u32 skyColorAt(float angle) {
 	float r = pow(a, 10) * 0.7f + 0.1f;
     float g = pow(a, 5) * 0.7f + 0.1f;
     float b = pow(a, 2) * 0.6f + 0.3f;
-    
+
 	int rr = r * 255;
 	int gg = g * 255;
 	int bb = b * 255;
@@ -240,14 +240,14 @@ void generateSky() {
 
 	for (int y = 0; y < skyH; ++y) {
 
-		float angle = std::pow(((float)y) / skyH, 3);	
+		float angle = std::pow(((float)y) / skyH, 3);
 		float ay = angle * M_PI_2;
 		float fy = std::sin(ay);
 		float fx = std::cos(ay);
 		u32 color = skyColorAt(angle);
 		for (int x = 0; x < skyW; ++x) {
 			float at = (x/* - y * 0.5f*/) * M_TAU / skyW; // unskew it a bit, doubt it will do much
-			vertices[x + y * skyW] = { 
+			vertices[x + y * skyW] = {
 				std::sin(at) * fx,
 				std::cos(at) * fx,
 				fy,
@@ -262,11 +262,11 @@ void generateSky() {
 		for (int x = 0; x < skyW; ++x) {
 			int x2 = (x + 1) % skyW;
 			int y2 = y + 1;
-			
+
 			indices.push_back(x + y * skyW);
 			indices.push_back(x2 + y * skyW);
 			indices.push_back(x2 + y2 * skyW);
-			
+
 			indices.push_back(x + y * skyW);
 			indices.push_back(x2 + y2 * skyW);
 			indices.push_back(x + y2 * skyW);
@@ -275,7 +275,7 @@ void generateSky() {
 
 	int dy = (skyH - 1) * skyW;
 	int dy2 = skyH * skyW;
-	
+
 	for (int x = 0; x < skyW; ++x) {
 		int x2 = (x + 1) % skyW;
 		indices.push_back(x + dy);
@@ -293,14 +293,14 @@ void generateSky() {
 }
 
 void resourceInit() {
-		
+
 	// Configure attributes for use with the vertex shader
 	AttrInfo_Init(&vertexLayouts.block);
 	AttrInfo_AddLoader(&vertexLayouts.block, 0, GPU_UNSIGNED_BYTE, 3); // v0=position
 	AttrInfo_AddLoader(&vertexLayouts.block, 1, GPU_UNSIGNED_BYTE, 2); // v1=texcoord
 	AttrInfo_AddLoader(&vertexLayouts.block, 2, GPU_BYTE, 3); // v2=normal
 	AttrInfo_AddLoader(&vertexLayouts.block, 3, GPU_UNSIGNED_BYTE, 1); // v3=ao
-			
+
 	AttrInfo_Init(&vertexLayouts.focus);
 	AttrInfo_AddLoader(&vertexLayouts.focus, 0, GPU_FLOAT, 3); // v0=position
 
@@ -327,7 +327,7 @@ void resourceInit() {
 		svcBreak(USERBREAK_PANIC);
 	if (!loadTextureFromMem(&textures[8], nullptr, planks_oak_t3x, planks_oak_t3x_size))
 		svcBreak(USERBREAK_PANIC);
-		
+
 	for (auto &t: textures) {
 		C3D_TexSetFilter(&t, GPU_NEAREST, GPU_LINEAR);
 		C3D_TexSetWrap(&t, GPU_REPEAT, GPU_REPEAT);
@@ -390,7 +390,7 @@ bool inFrustum(C3D_Mtx const &mtx, s16vec3 v) {
 				vf = Mtx_MultiplyFVec4(&mtx, vf);
 				vf = FVec4_PerspDivide(vf);
 				if (vf.z > 0) continue;
-				
+
 				vmin.x = std::min(vf.x, vmin.x);
 				vmin.y = std::min(vf.y, vmin.y);
 
@@ -398,8 +398,8 @@ bool inFrustum(C3D_Mtx const &mtx, s16vec3 v) {
 				vmax.y = std::max(vf.y, vmax.y);
 			}
 
-	bool out = 
-		vmin.x > 1 || vmax.x < -1 ||   
+	bool out =
+		vmin.x > 1 || vmax.x < -1 ||
 		vmin.y > 1 || vmax.y < -1;
 	return !out;
 }
@@ -422,10 +422,10 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 
 	C3D_Mtx perspective;
 	Mtx_PerspStereoTilt(
-		&perspective, 
-		C3D_AngleFromDegrees(70.0f), 
-		C3D_AspectRatioTop, 
-		0.2f, farPlane, 
+		&perspective,
+		C3D_AngleFromDegrees(70.0f),
+		C3D_AspectRatioTop,
+		0.2f, farPlane,
 		iod, 1.5f, false
 		);
 
@@ -447,8 +447,8 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 	C3D_FogLutBind(nullptr);
 	C3D_SetTexEnv(0, &texEnvs.solid);
 	C3D_AlphaBlend(
-		GPU_BLEND_ADD, GPU_BLEND_ADD, 
-		GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, 
+		GPU_BLEND_ADD, GPU_BLEND_ADD,
+		GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA,
 		GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA
 	);
 	C3D_CullFace(GPU_CULL_NONE);
@@ -461,7 +461,7 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 	C3D_SetBufInfo(&skyBuffer);
 
 	C3D_DrawElements(
-		GPU_TRIANGLES, skyIndexCount, C3D_UNSIGNED_BYTE, 
+		GPU_TRIANGLES, skyIndexCount, C3D_UNSIGNED_BYTE,
 		(u8*)skyvbo + skyIndexOffset
 	);
 
@@ -477,8 +477,8 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 
 	C3D_SetTexEnv(0, &texEnvs.textured);
 	C3D_AlphaBlend(
-		GPU_BLEND_ADD, GPU_BLEND_ADD, 
-		GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA, 
+		GPU_BLEND_ADD, GPU_BLEND_ADD,
+		GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA,
 		GPU_SRC_ALPHA, GPU_ONE_MINUS_SRC_ALPHA
 	);
 	C3D_BindProgram(&shaders.block.program);
@@ -496,7 +496,7 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 	int chY = static_cast<int>(camera.y) >> chunkBits;
 	int chZ = static_cast<int>(camera.z) >> chunkBits;
 	int maxDist2 = renderDistance*renderDistance;
-	
+
 	/// --- DRAW BLOCKS --- ///
 
 	chunksDrawn = 0;
@@ -508,16 +508,16 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 		int distance2 = dx*dx+dy*dy+dz*dz;
 		 // todo do this check once for stereo rendering
 		if (
-			(distance2 <= maxDist2) && 
-			meta.meshed && 
-			meta.allocation.vertexCount && 
-			(distance2 < 4 || inFrustum(projection, idx)) // frustum is buggy, always immediate neighbourhood 
+			(distance2 <= maxDist2) &&
+			meta.meshed &&
+			meta.allocation.vertexCount &&
+			(distance2 < 4 || inFrustum(projection, idx)) // frustum is buggy, always immediate neighbourhood
 		) {
 			++chunksDrawn;
 			C3D_SetBufInfo(&meta.vertexBuffer);
 			C3D_FVUnifSet(
-				GPU_VERTEX_SHADER, 
-				shaders.block.locs.chunkPos,     
+				GPU_VERTEX_SHADER,
+				shaders.block.locs.chunkPos,
 				idx.x * chunkSize, idx.y * chunkSize, idx.z * chunkSize, 0.0f
 			);
 			u16 offset = 0;
@@ -526,16 +526,16 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 				// if (idx.x&1 || idx.y & 1 || idx.z & 1) continue; // DISCO FEVER MODE
 				C3D_TexBind(0, &textures[m.texture + 1]);
 				C3D_DrawElements(
-					GPU_TRIANGLES, 
-					m.count, 
-					C3D_UNSIGNED_SHORT, 
+					GPU_TRIANGLES,
+					m.count,
+					C3D_UNSIGNED_SHORT,
 					(u16*)meta.allocation.indices + offset
 				);
 				offset += m.count;
 			}
 		}
 	}
-	
+
 	/// --- DRAW FOCUS HIGHLIGHT --- ///
 
 	C3D_FogLutBind(nullptr);
@@ -544,7 +544,7 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 		C3D_SetTexEnv(0, &texEnvs.solid);
 		C3D_AlphaBlend(
 			GPU_BLEND_ADD, GPU_BLEND_ADD,
-			GPU_SRC_ALPHA, GPU_ONE, 
+			GPU_SRC_ALPHA, GPU_ONE,
 			GPU_SRC_ALPHA, GPU_ONE
 		);
 		C3D_BindProgram(&shaders.focus.program);
@@ -552,16 +552,16 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 		// Update the uniforms
 		C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaders.focus.locs.projection, &projection);
 		// C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaders.focus.locs.modelView,  &modelView);
-		C3D_FVUnifSet(GPU_VERTEX_SHADER, shaders.focus.locs.blockPos, 
+		C3D_FVUnifSet(GPU_VERTEX_SHADER, shaders.focus.locs.blockPos,
 			focus->x, focus->y, focus->z, 0.0f
 		);
 
 		C3D_SetAttrInfo(&vertexLayouts.focus);
 		C3D_SetBufInfo(&focusBuffer);
 		C3D_DrawElements(
-			GPU_TRIANGLES, 
-			2*3*6, 
-			C3D_UNSIGNED_BYTE, 
+			GPU_TRIANGLES,
+			2*3*6,
+			C3D_UNSIGNED_BYTE,
 			(u8*)focusvbo + 3*4*8
 		);
 	}
@@ -574,9 +574,9 @@ u32 debugDelay = SYSCLOCK_ARM11 / 3; // 3hz
 #endif
 
 void render(fvec3 &playerPos, float rx, float ry, vec3<s32> *focus, float depthSlider) {
-	float iod = depthSlider / 5; 
+	float iod = depthSlider / 5;
 	bool should3d = iod > 0.01f;
-	if (should3d != gfxIs3D()) 
+	if (should3d != gfxIs3D())
 		gfxSet3D(should3d);
 
 	float eyeHeight = 1.5f;
@@ -626,7 +626,7 @@ void render(fvec3 &playerPos, float rx, float ry, vec3<s32> *focus, float depthS
 	#ifdef PROFILER
 	if (targetBottom == nullptr) {
 		u32 now = svcGetSystemTick();
-		if ((now - lastPrintTimestamp) > debugDelay) { 
+		if ((now - lastPrintTimestamp) > debugDelay) {
 			lastPrintTimestamp += debugDelay; // do so it does not drift, not like it matters
 			if ((now - lastPrintTimestamp) > debugDelay) // if the diff is too large, reset
 				lastPrintTimestamp = now;
@@ -661,19 +661,19 @@ void renderExit() {
 	shaderProgramFree(&shaders.block.program);
 	DVLB_Free(shaders.block.dvlb);
 	shaderProgramFree(&shaders.focus.program);
-	DVLB_Free(shaders.focus.dvlb);  
+	DVLB_Free(shaders.focus.dvlb);
 	shaderProgramFree(&shaders.sky.program);
-	DVLB_Free(shaders.sky.dvlb);  
+	DVLB_Free(shaders.sky.dvlb);
 
 	linearFree(skyvbo);
 	linearFree(focusvbo);
 
 	// todo: verify if there are other resources to free
-	
+
 	C3D_Fini();
-	C2D_Fini();	
+	C2D_Fini();
 	gfxExit();
- 
+
 }
 
 

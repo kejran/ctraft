@@ -1,4 +1,4 @@
-#pragma once 
+#pragma once
 
 #include "common.hpp"
 #include "mesher.hpp"
@@ -12,4 +12,4 @@ struct ChunkMetadata {
 };
 
 using WorldMap = std::unordered_map<s16vec3, ChunkMetadata, s16vec3::hash>;
-inline WorldMap world; 
+inline WorldMap world;
