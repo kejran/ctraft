@@ -236,7 +236,7 @@ bool raycast(fvec3 eye, fvec3 dir, float maxLength, vec3<s32> &out, vec3<s32> &n
 
 bool scheduleChunk(s16 x, s16 y, s16 z);
 
-ChunkMetadata *tryGetChunk(s16 x, s16 y, s16 z) {        
+ChunkMetadata *tryGetChunk(s16 x, s16 y, s16 z) {
 	auto it = world.find({x, y, z}); 
 	if (it != world.end())
 		return &it->second;
@@ -547,13 +547,22 @@ bool scheduleChunk(s16 x, s16 y, s16 z) {
 	return postTask(task);
 }
 
+void invalidateWorldIterator();
+
 void processWorkerResults() {
 	TaskResult r;
 	while (getResult(r))
 		switch (r.type) {
 			case TaskResult::Type::ChunkData: {
+
 				s16vec3 idx = { r.chunk.x, r.chunk.y, r.chunk.z };
+				auto oldBuckets = world.bucket_count();
 				auto &meta = world[idx];
+
+				// this will cancel iterative unloading if it is progress	
+				if (world.bucket_count() != oldBuckets)
+					invalidateWorldIterator();
+
 				meta.data = r.chunk.data;
 				for (size_t i = 0; i < scheduledChunks.size(); ++i)
 					if (scheduledChunks[i] == idx) {
@@ -583,37 +592,103 @@ void processWorkerResults() {
 		}
 }
 
+// note that a 1-chunk thick shell will generate outside the render cage since it is needed for meshing
 static constexpr int distanceLoad = 5; // blocks to load, cage size 2n+1
 static constexpr int distanceUnload = 7; // blocks to unload, keep blocks in cage of 2n+1
 
-// note that a 1-chunk thick shell will generate outside the render cage since it is needed for meshing
+enum class WMStatus {
+	Idle, 
+	UnloadDistance,
+	LoadVisible
+};
 
-void updateWorld(fvec3 focus) {
+struct {
+	int chX, chY, chZ;
 
-	int chX = static_cast<int>(focus.x) >> chunkBits;
-	int chY = static_cast<int>(focus.y) >> chunkBits;
-	int chZ = static_cast<int>(focus.z) >> chunkBits;
+	std::vector<Result> pendingResults;
+	WorldMap::iterator checkToErase;
+	std::vector<s16vec3> checkToLoad;
 
-	for (auto it = world.begin(); it != world.end();) {
+	WMStatus status = WMStatus::Idle;
+
+} wm;
+
+void invalidateWorldIterator() {
+	if (wm.status == WMStatus::UnloadDistance)
+		wm.status = WMStatus::LoadVisible;
+}
+
+constexpr u32 maxWMTime = SYSCLOCK_ARM11 / 1000; // 1ms per frame
+
+void wmSchedule(fvec3 focus) {
+
+	wm.chX = static_cast<int>(focus.x) >> chunkBits;
+	wm.chY = static_cast<int>(focus.y) >> chunkBits;
+	wm.chZ = static_cast<int>(focus.z) >> chunkBits;
+
+	wm.checkToLoad.clear();
+
+	wm.checkToErase = world.begin();
+
+	for (int z = wm.chZ - distanceLoad; z <= wm.chZ + distanceLoad; ++z)
+		for (int y = wm.chY - distanceLoad; y <= wm.chY + distanceLoad; ++y)
+			for (int x = wm.chX - distanceLoad; x <= wm.chX + distanceLoad; ++x)
+				if (z >= -zChunks && z <= zChunks)
+					wm.checkToLoad.push_back(_sv(x, y, z));
+
+	wm.status = WMStatus::UnloadDistance;
+}
+
+
+inline void wmUnload() {
+	auto &it = wm.checkToErase;
+	if (wm.checkToErase != world.end()) {
 		auto &idx = it->first;
 		if (
-			idx.x < chX - distanceUnload ||
-			idx.x > chX + distanceUnload ||
-			idx.y < chY - distanceUnload ||
-			idx.y > chY + distanceUnload ||
-			idx.y < chY - distanceUnload ||
-			idx.z > chZ + distanceUnload
+			idx.x < wm.chX - distanceUnload ||
+			idx.x > wm.chX + distanceUnload ||
+			idx.y < wm.chY - distanceUnload ||
+			idx.y > wm.chY + distanceUnload ||
+			idx.y < wm.chY - distanceUnload ||
+			idx.z > wm.chZ + distanceUnload
 		)
 			it = destroyChunk(it);
 		else
 			++it;
 	}
+	else
+		wm.status = WMStatus::LoadVisible;
+}
 
-	for (int z = chZ - distanceLoad; z <= chZ + distanceLoad; ++z)
-		for (int y = chY - distanceLoad; y <= chY + distanceLoad; ++y)
-			for (int x = chX - distanceLoad; x <= chX + distanceLoad; ++x) 
-				if (z >= -zChunks && z <= zChunks)
-					tryInitChunkAndMesh(x, y, z);
+inline void wmLoad() {
+	if (wm.checkToLoad.size()) {
+		auto idx = wm.checkToLoad.back();
+		tryInitChunkAndMesh(idx.x, idx.y, idx.z);
+		wm.checkToLoad.pop_back();
+	} else
+		wm.status = WMStatus::Idle;
+}
+
+// block management only gets a small time-slice from the budget
+void manageWorld(fvec3 focus) {
+
+	PROFILE_SCOPE;
+
+	// todo maybe batch the updates a bit, check cost of the tick call
+	u32 startTime = svcGetSystemTick();
+
+	while (((u32)svcGetSystemTick() - startTime) < maxWMTime)
+		switch (wm.status) {
+			case WMStatus::Idle:
+				wmSchedule(focus);
+				break;
+			case WMStatus::UnloadDistance:
+				wmUnload();
+				break;
+			case WMStatus::LoadVisible:
+				wmLoad();
+				break;
+		}
 }
 
 enum class RunMode {
@@ -648,7 +723,7 @@ void mainLoop() {
 
 	processWorkerResults();
 	scheduleMarkedRemeshes();
-	updateWorld(player.pos); // this takes up the most of the time ;_;
+	manageWorld(player.pos);
 
 	hidScanInput();
 
@@ -679,6 +754,22 @@ int main() {
 
 	hidScanInput();
 	u32 keys = hidKeysHeld();
+
+	#ifdef PROFILER
+	// Enter debug mode when holding dpad-up or running on JPN/"wonky" system.
+	// Citra seems to return/fail to JPN so check for that;
+	// While I doubt many Japanese people would be interested in playing this,
+	// it would be best to disable it when not profiling.
+	
+	cfguInit();
+	u8 region = 0;
+	CFGU_SecureInfoGetRegion(&region);
+	cfguExit();
+
+	if (region == 0)
+		console = true;
+	#endif
+
 	if (keys & KEY_DUP)
 		console = true;
 
