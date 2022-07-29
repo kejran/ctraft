@@ -408,8 +408,6 @@ int chunksDrawn;
 
 void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod) {
 
-	u32 lastFrameTime;
-
 	/// --- CALCULATE VIEW --- ///
 
 	C3D_Mtx modelView;
@@ -570,8 +568,10 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 }
 
 u32 frameStartTimestamp;
+#ifdef PROFILER
 u32 lastPrintTimestamp;
 u32 debugDelay = SYSCLOCK_ARM11 / 3; // 3hz
+#endif
 
 void render(fvec3 &playerPos, float rx, float ry, vec3<s32> *focus, float depthSlider) {
 	float iod = depthSlider / 5; 
@@ -623,6 +623,7 @@ void render(fvec3 &playerPos, float rx, float ry, vec3<s32> *focus, float depthS
 	}
 	C3D_FrameEnd(0);
 
+	#ifdef PROFILER
 	if (targetBottom == nullptr) {
 		u32 now = svcGetSystemTick();
 		if ((now - lastPrintTimestamp) > debugDelay) { 
@@ -633,18 +634,23 @@ void render(fvec3 &playerPos, float rx, float ry, vec3<s32> *focus, float depthS
 			float fdiff = timeBeforeSync - frameStartTimestamp;
 			fdiff *= invTickRate;
 			float ftime = fdiff * 1000;
-			int fbudget = std::ceil(fdiff * 60 * 100);
-			int gpu = std::ceil(C3D_GetDrawingTime()*6);
+			float fbudget = fdiff * 60 * 100;
+			float gpu = C3D_GetDrawingTime()*6;
+			float fcustom = _customProfileTime;
+			float custom = fcustom * invTickRate * 60 * 100;
 			printf("\x1b[1;1f");
-			printf("Frame time:   %5.2fms  \n", ftime);
-			printf("Frame budget: %3i%%  \n", fbudget);
-			printf("Draw time   : %3i%%  \n", gpu);
-			printf("Chunks drawn: %3i  \n", chunksDrawn);
+			printf("Frame time   : %5.2fms    \n", ftime);
+			printf("Frame budget : %4.1f%%    \n", fbudget + 0.1f);
+			printf("Draw time    : %4.1f%%    \n", gpu + 0.1f);
+			printf("Profile time : %4.1f%%    \n", custom + 0.1f);
+			printf("Profile calls: %3i    \n", (int)_customProfileCalls);
+			printf("Chunks drawn : %3i    \n", chunksDrawn);
 		}
 	}
-
+	_customProfileCalls = 0;
+	_customProfileTime = 0;
+	#endif
 	frameStartTimestamp = nextTimeAfterSync;
-
 }
 
 void renderExit() {

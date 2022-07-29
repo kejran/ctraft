@@ -50,20 +50,32 @@ static constexpr float invTickRate = 1.0f / SYSCLOCK_ARM11;
 constexpr int renderDistance = 3;
 constexpr int zChunks = 2; // 5 chunks = 80 blocks of height total
 
-struct timeit {
-	char const *name_;
-	u32 start_;
-	
-	timeit(char const *name) { 
-		name_ = name; 
-		start_ = svcGetSystemTick();
-	}
-
-	~timeit() {
-		u32 end = svcGetSystemTick();
-		printf("%s: %fms\n", name_, (end - start_) * invTickRate * 1000);
-	}
-};
 #define CONSOLE
 
 #define INLINE __attribute__((always_inline)) inline 
+
+#define PROFILER
+
+#ifdef PROFILER
+inline u32 _customProfileStart = 0;
+inline u32 _customProfileCalls = 0;
+inline u32 _customProfileTime = 0;
+
+#define PROFILE_START _customProfileStart = svcGetSystemTick();
+#define PROFILE_END do { \
+_customProfileTime += svcGetSystemTick() - _customProfileStart; \
+++_customProfileCalls; } while (0)
+#else
+#define PROFILE_START
+#define PROFILE_END
+#endif
+
+#ifdef PROFILER
+struct ProfilerWrapper {
+	ProfilerWrapper() { PROFILE_START; }
+	~ProfilerWrapper() { PROFILE_END; }
+};
+#define PROFILE_SCOPE ProfilerWrapper ___wrapper
+#else
+#define PROFILE_SCOPE
+#endif

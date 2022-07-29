@@ -293,9 +293,9 @@ bool regenerateMesh(ChunkMetadata &meta, s16 x, s16 y, s16 z) {
 bool isMeshScheduled(s16vec3 idx);
 
 bool tryMakeMesh(ChunkMetadata &meta, s16 x, s16 y, s16 z) { 
-	s16vec3 idx { x, y, z };
 	if (meta.meshed) 
 		return true;
+	s16vec3 idx { x, y, z };
 	if (isMeshScheduled(idx))
 		return false;
 	std::array<chunk *, 6> sides { nullptr };
@@ -648,7 +648,7 @@ void mainLoop() {
 
 	processWorkerResults();
 	scheduleMarkedRemeshes();
-	updateWorld(player.pos);
+	updateWorld(player.pos); // this takes up the most of the time ;_;
 
 	hidScanInput();
 
