@@ -593,8 +593,8 @@ void processWorkerResults() {
 }
 
 // note that a 1-chunk thick shell will generate outside the render cage since it is needed for meshing
-static constexpr int distanceLoad = 5; // blocks to load, cage size 2n+1
-static constexpr int distanceUnload = 7; // blocks to unload, keep blocks in cage of 2n+1
+static constexpr int distanceLoad = 6; // blocks to load, cage size 2n+1
+static constexpr int distanceUnload = 8; // blocks to unload, keep blocks in cage of 2n+1
 
 enum class WMStatus {
 	Idle, 
