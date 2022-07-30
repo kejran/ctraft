@@ -5,16 +5,18 @@
 #include "mesher.hpp"
 #include "world.hpp"
 
-#include "coal_ore_t3x.h"
-#include "cobblestone_t3x.h"
-#include "cursor_t3x.h"
-#include "dirt_t3x.h"
-#include "grass_side_t3x.h"
-#include "grass_top_t3x.h"
-#include "planks_oak_t3x.h"
-#include "sand_t3x.h"
-#include "stone_t3x.h"
-#include "tallgrass_t3x.h"
+#include "coal_ore_pt3x.h"
+#include "cobblestone_pt3x.h"
+#include "cursor_pt3x.h"
+#include "dirt_pt3x.h"
+#include "grass_side_pt3x.h"
+#include "grass_top_pt3x.h"
+#include "planks_oak_pt3x.h"
+#include "sand_pt3x.h"
+#include "stone_pt3x.h"
+#include "tallgrass_pt3x.h"
+#include "log_oak_pt3x.h"
+#include "log_oak_top_pt3x.h"
 
 #include "terrain_shbin.h"
 #include "focus_shbin.h"
@@ -293,6 +295,28 @@ void generateSky() {
 	BufInfo_Add(&skyBuffer, skyvbo, sizeof(skyVertex), 2, 0x10);
 }
 
+struct textureData_t {
+	u8 const *data;
+	size_t size;
+};
+
+#define _t(x) { x ## _pt3x, x ## _pt3x_size } 
+textureData_t textureData[] = {
+	_t(cursor),
+	_t(dirt),
+	_t(grass_side),
+	_t(grass_top),
+	_t(stone),
+	_t(coal_ore),
+	_t(cobblestone),
+	_t(sand),
+	_t(planks_oak),
+	_t(tallgrass),
+	_t(log_oak),
+	_t(log_oak_top),
+};
+#undef t
+
 void resourceInit() {
 
 	// Configure attributes for use with the vertex shader
@@ -309,28 +333,11 @@ void resourceInit() {
 	AttrInfo_AddLoader(&vertexLayouts.sky, 0, GPU_FLOAT, 3); // v0=position
 	AttrInfo_AddLoader(&vertexLayouts.sky, 1, GPU_UNSIGNED_BYTE, 4); // v1=color
 
-	// todo optimize it with arrays or something
-	if (!loadTextureFromMem(&textures[0], nullptr, cursor_t3x, cursor_t3x_size))
-		svcBreak(USERBREAK_PANIC);
-	if (!loadTextureFromMem(&textures[1], nullptr, dirt_t3x, dirt_t3x_size))
-		svcBreak(USERBREAK_PANIC);
-	if (!loadTextureFromMem(&textures[2], nullptr, grass_side_t3x, grass_side_t3x_size))
-		svcBreak(USERBREAK_PANIC);
-	if (!loadTextureFromMem(&textures[3], nullptr, grass_top_t3x, grass_top_t3x_size))
-		svcBreak(USERBREAK_PANIC);
-	if (!loadTextureFromMem(&textures[4], nullptr, stone_t3x, stone_t3x_size))
-		svcBreak(USERBREAK_PANIC);
-	if (!loadTextureFromMem(&textures[5], nullptr, coal_ore_t3x, coal_ore_t3x_size))
-		svcBreak(USERBREAK_PANIC);
-	if (!loadTextureFromMem(&textures[6], nullptr, cobblestone_t3x, cobblestone_t3x_size))
-		svcBreak(USERBREAK_PANIC);
-	if (!loadTextureFromMem(&textures[7], nullptr, sand_t3x, sand_t3x_size))
-		svcBreak(USERBREAK_PANIC);
-	if (!loadTextureFromMem(&textures[8], nullptr, planks_oak_t3x, planks_oak_t3x_size))
-		svcBreak(USERBREAK_PANIC);
-	if (!loadTextureFromMem(&textures[9], nullptr, tallgrass_t3x, tallgrass_t3x_size))
-		svcBreak(USERBREAK_PANIC);
-
+	for (int i = 0; i < textureCount; ++i)
+		if (!loadTextureFromMem(&textures[i], nullptr, 
+			textureData[i].data, textureData[i].size))
+			exit(0);
+	
 	for (auto &t: textures) {
 		C3D_TexSetFilter(&t, GPU_NEAREST, GPU_LINEAR);
 		C3D_TexSetWrap(&t, GPU_REPEAT, GPU_REPEAT);
