@@ -8,7 +8,15 @@
 #include <unordered_map>
 #include <vector>
 
-template <typename T> struct vec2 { T x, y; };
+template <typename T> struct vec2 {
+	T x = 0, y = 0;
+	bool operator==(vec2<T> const &o) const = default;
+	struct hash {
+		size_t operator()(const vec2<T>& pos) const {
+			return pos.x ^ pos.y;
+		}
+	};
+};
 template <typename T> struct vec3 {
 	T x = 0, y = 0, z = 0;
 	bool operator==(vec3<T> const &o) const = default;
