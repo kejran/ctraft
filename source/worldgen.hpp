@@ -25,7 +25,8 @@ struct Column {
 
     std::array<std::array<BlockColumn, chunkSize>, chunkSize> blocks;
     // u32 cacheIndex;
-    stampList stamps;
+    stampList softStamps;
+    stampList hardStamps;
     bool stampsGenerated;
 };
 

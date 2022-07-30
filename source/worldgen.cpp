@@ -43,7 +43,7 @@ Column &generateColumn(s16 cx, s16 cy) {
 
 			b.grass = (simpleHash(x, y, 0) & 0xf) == 0; // 1 in 16
 
-			b.tree = (simpleHash(x, y, 0) & 0x3f) == 5; // 1 in 64
+			b.tree = (simpleHash(x, y, 0) & 0x7f) == 5; // 1 in 128
 		}
 
 	return c;
@@ -85,33 +85,51 @@ INLINE Block blockAt(Column &c, int locX, int locY, int x, int y, int z) {
 	}
 }
 
-void treeStamp(int x, int y, int z, stampList &stamps) {
+void treeStamp(int x, int y, int z, stampList &softStamps, stampList &hardStamps) {
 
-	for (int lz = 0; lz < 3; ++lz)
+
+	for (int lz = 0; lz < 2; ++lz)
 		for (int ly = -1; ly < 2; ++ly)
 			for (int lx = -1; lx < 2; ++lx)
 				if (lz != 2 || ly == 0 || lx == 0)
-					stamps.add(x + lx, y + ly, 2 + z + lz, Block::solid(8));
+					softStamps.add(x + lx, y + ly, 2 + z + lz, Block::solid(8));
+
+	const int branches = 5;  
+	for (int i = 0; i < branches; ++i) {
+
+		auto h = simpleHash(x, y, z + i);
+		int bx = h & 0x3; if (bx > 2) bx = 2 - bx;
+		int by = (h >> 3) & 0x3; if (by > 2) by = 2 - by;
+		int bz = (h >> 6) & 0x3; if (bz == 3) bz = 0;
+
+		for (int lz = 0; lz < 2; ++lz)
+			for (int ly = -1; ly < 2; ++ly)
+				for (int lx = -1; lx < 2; ++lx)
+					if (lz != 2 || ly == 0 || lx == 0)
+						if (simpleHash(lz, ly, lx + i) & 0x3)
+							softStamps.add(bx + x + lx, by + y + ly, bz + 2 + z + lz, Block::solid(8));
+
+	}
 
 	for (int iz = 0; iz < 3; ++iz)
-		stamps.add(x, y, z + iz, Block::solid(7));
+		hardStamps.add(x, y, z + iz, Block::solid(7));
 }
 
-void generateTreeStamps(Column const &c, s16 offX, s16 offY, stampList &stamps) {
+void generateTreeStamps(Column const &c, s16 offX, s16 offY, stampList &softStamps, stampList &hardStamps) {
 	for (int ly = 0; ly < chunkSize; ++ly)
 		for (int lx = 0; lx < chunkSize; ++lx) {
 			auto &b = c.blocks[ly][lx];
 			if (b.tree)
-				treeStamp(lx + offX, ly + offY, b.height, stamps);
+				treeStamp(lx + offX, ly + offY, b.height, softStamps, hardStamps);
 		}
 }
 
 // todo: stamps should be generated once per block
-void generateStamps(s16 cx, s16 cy, stampList &stamps) {
+void generateStamps(s16 cx, s16 cy, stampList &softStamps, stampList &hardStamps) {
 	for (int y = -1; y < 2; ++y)
 		for (int x = -1; x < 2; ++x) {
 			auto &column = getColumn(cx + x, cy + y);
-			generateTreeStamps(column, x*chunkSize, y*chunkSize, stamps);
+			generateTreeStamps(column, x*chunkSize, y*chunkSize, softStamps, hardStamps);
 		}
 }
 
@@ -131,12 +149,19 @@ chunk *generateChunk(s16 cx, s16 cy, s16 cz) {
 		}
 
 	if (!column.stampsGenerated)
-		generateStamps(cx, cy, column.stamps);
+		generateStamps(cx, cy, column.softStamps, column.hardStamps);
 	
-	for (auto [x, y, z, block]: column.stamps.stamps) {
+	for (auto [x, y, z, block]: column.hardStamps.stamps) {
 		z -= cz * chunkSize;
 		if (z >= 0 && z < chunkSize)
 			(*data)[z][y][x] = block;
+	}
+
+	for (auto [x, y, z, block]: column.softStamps.stamps) {
+		z -= cz * chunkSize;
+		if (z >= 0 && z < chunkSize)
+			if ((*data)[z][y][x].isAir())
+				(*data)[z][y][x] = block;
 	}
 
 	return data;
