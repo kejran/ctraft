@@ -14,6 +14,7 @@
 #include "planks_oak_t3x.h"
 #include "sand_t3x.h"
 #include "stone_t3x.h"
+#include "tallgrass_t3x.h"
 
 #include "terrain_shbin.h"
 #include "focus_shbin.h"
@@ -144,7 +145,7 @@ void bottomUI() {
 	for (int i = 1; i < blockCount; ++i) {
 		int x = i % 4;
 		int y = i / 4;
-		img.tex = &textures[getBlockVisual(i)[0] + 1]; // -Y
+		img.tex = &textures[getBlockVisual(Block::solid(i-1)).faces[0] + 1]; // -Y
 		C2D_DrawImageAt(img,
 			160 - (4 * spacing / 2) + (spacing - size) / 2 + x * spacing,
 			120 - (2 * spacing / 2) + (spacing - size) / 2 + y * spacing,
@@ -327,6 +328,8 @@ void resourceInit() {
 		svcBreak(USERBREAK_PANIC);
 	if (!loadTextureFromMem(&textures[8], nullptr, planks_oak_t3x, planks_oak_t3x_size))
 		svcBreak(USERBREAK_PANIC);
+	if (!loadTextureFromMem(&textures[9], nullptr, tallgrass_t3x, tallgrass_t3x_size))
+		svcBreak(USERBREAK_PANIC);
 
 	for (auto &t: textures) {
 		C3D_TexSetFilter(&t, GPU_NEAREST, GPU_LINEAR);
@@ -467,8 +470,6 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 
 	/// --- SETUP BLOCK RENDERING --- ///
 
-	C3D_CullFace(GPU_CULL_BACK_CCW);
-
 	C3D_DepthTest(true, GPU_GREATER, GPU_WRITE_ALL);
 
 	C3D_FogGasMode(GPU_FOG, GPU_PLAIN_DENSITY, false);
@@ -521,7 +522,15 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 				idx.x * chunkSize, idx.y * chunkSize, idx.z * chunkSize, 0.0f
 			);
 			u16 offset = 0;
+			u8 oldFlags = 0xff;
 			for (auto &m: meta.allocation.meshes) {
+				if (m.flags != oldFlags) {
+					C3D_CullFace((m.flags & MesherAllocation::MESH_NOCULL) ?
+						GPU_CULL_NONE : GPU_CULL_BACK_CCW);
+					C3D_AlphaTest((m.flags & MesherAllocation::MESH_ALPHATEST), 
+						GPU_GREATER, 0x7f);
+				}
+				oldFlags = m.flags;
 				// if ((idx.x^idx.y^idx.z) & 1) continue; // funk mode
 				// if (idx.x&1 || idx.y & 1 || idx.z & 1) continue; // DISCO FEVER MODE
 				C3D_TexBind(0, &textures[m.texture + 1]);

@@ -8,7 +8,7 @@
 #include "worker.hpp"
 #include "world.hpp"
 
-u16 tryGetBlock(int x, int y, int z);
+Block tryGetBlock(int x, int y, int z);
 
 WorldMap::iterator destroyChunk(WorldMap::iterator it) {
 	delete it->second.data;
@@ -56,12 +56,12 @@ float collideFloor(fvec3 pos, float height, float radius, bool &cz) {
 	for (int _y = b; _y <= f; ++_y)
 	 	for (int _x = l; _x <= r; ++_x) {
 			int t = fastFloor(pos.z + height);
-			if (tryGetBlock(_x, _y, t)) {
+			if (tryGetBlock(_x, _y, t).isSolid()) { // todo: make isblocking or similar
 				zz = t - height;
 				cz = true;
 			}
 			int b = fastFloor(pos.z);
-			if (tryGetBlock(_x, _y, b)) {
+			if (tryGetBlock(_x, _y, b).isSolid()) {
 				zz = b + 1;
 				cz = true;
 			}
@@ -93,7 +93,7 @@ fvec2 collide2d(fvec2 position, int z, float radius, bool &cx, bool &cy) {
 
 	for (int _y = b; _y <= f; ++_y)
 	 	for (int _x = l; _x <= r; ++_x)
-			if (tryGetBlock(_x, _y, z)) {
+			if (tryGetBlock(_x, _y, z).isSolid()) {
 				// distances to centers of blocks
 				float distX = _x - tx + 0.5f; // vector from player to centre of block
 				float distY = _y - ty + 0.5f;
@@ -189,13 +189,13 @@ bool raycast(fvec3 eye, fvec3 dir, float maxLength, vec3<s32> &out, vec3<s32> &n
 	int i = 0;
 	while (t_ <= maxLength) {
 		if (i++ > (1+maxLength)*3)
-			return false; // the distance check is buggy... fix it later
+			return false; // todo the distance check is buggy... fix it later
 
 		// exit check
 		auto b = tryGetBlock(ix, iy, iz);
-		if (b == 0xffff)
+		if (b.value == 0xffff) // todo extract it out somewhere
 			return false;
-		if (b) {
+		if (b.isSolid()) {
 			out.x = ix; out.y = iy; out.z = iz;
 			normal = {0, 0, 0};
 			if (steppedIndex == 0) normal.x = (stepx < 0) ? 1 : -1;
@@ -255,14 +255,14 @@ ChunkMetadata *tryGetChunk(s16 x, s16 y, s16 z) {
 	}
 }
 
-u16 tryGetBlock(int x, int y, int z) {
+Block tryGetBlock(int x, int y, int z) {
 
 	auto *ch = tryGetChunk(x >> chunkBits, y >> chunkBits, z >> chunkBits);
 
 	if (ch != nullptr)
 		return (*ch->data)[z & chunkMask][y & chunkMask][x & chunkMask];
 	else
-		return 0xffff;
+		return { 0xffff };
 }
 
 bool tryGetSides(int x, int y, int z, std::array<chunk *, 6> &out) {
@@ -507,7 +507,7 @@ void handlePlayer(float delta) {
 
 			if (ch) {
 				int lx = nx & chunkMask, ly = ny & chunkMask, lz = nz & chunkMask;
-				(*ch->data)[lz][ly][lx] = selectedBlock;
+				(*ch->data)[lz][ly][lx] = Block::solid(selectedBlock - 1);
 				markBlockDirty(lx, ly, lz, idx);
 			}
 		}
@@ -522,7 +522,7 @@ void handlePlayer(float delta) {
 
 			if (ch) {
 				int lx = nx & chunkMask, ly = ny & chunkMask, lz = nz & chunkMask;
-				(*ch->data)[lz][ly][lx] = 0;
+				(*ch->data)[lz][ly][lx] = { 0 };
 				markBlockDirty(lx, ly, lz, idx);
 			}
 		}
@@ -631,7 +631,6 @@ void processWorkerResults() {
 					}
 			} break;
 			case TaskResult::Type::ChunkMesh: {
-
 				s16vec3 idx = { r.chunk.x, r.chunk.y, r.chunk.z };
 				auto &meta = world[idx];
 
@@ -782,14 +781,12 @@ void loadMapLoop() {
 					ready = false;
 
 	renderLoading();
-
 	if (ready)
 		runMode = RunMode::Running;
 }
 
 void mainLoop() {
 // do it before input and vsync wait, consider player input
-
 	processWorkerResults();
 	scheduleMarkedRemeshes();
 	manageWorld(player.pos);

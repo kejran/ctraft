@@ -3,6 +3,8 @@
 #include "mesher.hpp"
 #include <cassert>
 
+constexpr int subBlockRes = 8;
+
 // right handed?
 /*
     3---2
@@ -41,8 +43,25 @@ static const u8vec3 basicCubeVs[8] = {
 	{0, 1, 1},
 };
 
-// (0), dirt, grass, stone, cobble, coal, sand, planks
-static constexpr BlockVisual blockVisuals[] = {
+const int _sqv1 = 1; // 8 * 0.1464466094 ~= 1;
+const int _sqv2 = 7; // 8 * 0.8535533906 ~= 7;
+
+const u8vec3 foliageVerts[] = {
+	{_sqv1, _sqv1, 0},
+	{_sqv2, _sqv2, 0},
+	{_sqv2, _sqv2, subBlockRes},
+	{_sqv1, _sqv1, subBlockRes},
+
+	{_sqv1, _sqv2, 0},
+	{_sqv2, _sqv1, 0},
+	{_sqv2, _sqv1, subBlockRes},
+	{_sqv1, _sqv2, subBlockRes},
+};
+
+using T = BlockVisual::Type;
+
+// dirt, grass, stone, cobble, coal, sand, planks
+static constexpr std::array<u8, 6> solidVisuals[] = {
 	{ 0, 0, 0, 0, 0, 0 }, // dirt
 	{ 1, 1, 1, 1, 0, 2 }, // grass
 	{ 3, 3, 3, 3, 3, 3 }, // stone
@@ -50,6 +69,11 @@ static constexpr BlockVisual blockVisuals[] = {
 	{ 4, 4, 4, 4, 4, 4 }, // coal
 	{ 6, 6, 6, 6, 6, 6 }, // sand
 	{ 7, 7, 7, 7, 7, 7 }, // planks
+};
+
+static constexpr std::array<u8, 6> foliageVisuals[] = {
+	{},     // dummy
+	{ 8,  8 },	// grass
 };
 
 INLINE s8vec3 _V8(int x, int y, int z) {
@@ -133,14 +157,14 @@ INLINE void meshFace(
 
 				// this is block position in the grid
 				auto idx = a::at(u, v, l);
-				u16 self = cch[idx.z+1][idx.y+1][idx.x+1];
+				auto self = cch[idx.z+1][idx.y+1][idx.x+1];
 
-				bool draw = self > 0;
+				bool draw = self.isSolid();
 				if (draw) {
 					// neighbouring block of this face
 					auto normIdx = a::at(u, v, l + 1);
-					u16 other = cch[normIdx.z+1][normIdx.y+1][normIdx.x+1];
-					draw = other == 0;
+					auto other = cch[normIdx.z+1][normIdx.y+1][normIdx.x+1];
+					draw = other.isNonSolid();
 				}
 				if (draw) {
 					for (int i = 0; i < 4; ++i) {
@@ -162,9 +186,9 @@ INLINE void meshFace(
 							auto coords = a::atV(u + uv.x, v + uv.y, l);
 
 							n.position = {
-								static_cast<u8>(coords.x),
-								static_cast<u8>(coords.y),
-								static_cast<u8>(coords.z)
+								static_cast<u8>(coords.x * subBlockRes),
+								static_cast<u8>(coords.y * subBlockRes),
+								static_cast<u8>(coords.z * subBlockRes)
 							};
 							n.texcoord = guv;
 							// note: we do not really need normals anymore
@@ -177,21 +201,21 @@ INLINE void meshFace(
 							auto dir2 = a::at(u, v + v1, l + 1);
 
 							// https://0fps.net/2013/07/03/ambient-occlusion-for-minecraft-like-worlds/
-							bool side1 = cch[dir1.z+1][dir1.y+1][dir1.x+1] > 0;
-							bool side2 = cch[dir2.z+1][dir2.y+1][dir2.x+1] > 0;
+							bool side1 = cch[dir1.z+1][dir1.y+1][dir1.x+1].isSolid();
+							bool side2 = cch[dir2.z+1][dir2.y+1][dir2.x+1].isSolid();
 							int ambient = 1; // corners should not be pure black
 							if (side1 && side2)
 								n.ao = ambient;
 							else {
 								auto dirs = a::at(u + u1, v + v1, l + 1);
-								bool corner = cch[dirs.z+1][dirs.y+1][dirs.x+1];
+								bool corner = cch[dirs.z+1][dirs.y+1][dirs.x+1].isSolid();
 								n.ao = 3 + ambient - (side1 + side2 + corner);
 							}
 						}
 
 						vidxs[i] = vertexIdx;
 					}
-					auto vis = blockVisuals[self - 1];
+					auto vis = solidVisuals[self.solidId()];
 					auto &vec = isPerTexture[vis[s]];
 
 					if (
@@ -218,6 +242,43 @@ INLINE void meshFace(
 	}
 }
 
+INLINE void meshFoliage(
+	expandedChunk const &cch,
+	std::vector<vertex> &vertices,
+	std::array<std::vector<u16>, textureCount> &isPerTexture
+) {
+	for (int z = 0; z < chunkSize; ++z)
+		for (int y = 0; y < chunkSize; ++y)
+			for (int x = 0; x < chunkSize; ++x) {
+				auto b = cch[z+1][y+1][x+1];
+				if (b.isFoliage()) {
+					int idx = b.value >> 8;
+					auto &v = foliageVisuals[idx];
+					int vs = vertices.size();
+					for (int i = 0; i < 8; ++i) {
+						vertex v;
+						v.position = foliageVerts[i];
+						v.position.x += x * subBlockRes;
+						v.position.y += y * subBlockRes;
+						v.position.z += z * subBlockRes;
+						v.texcoord = basicCubeUVs[i & 3];
+						v.ao = (i & 2) ? 5 : 3;
+						vertices.push_back(v);
+					}
+					auto &is = isPerTexture[v[0]];
+					for (int i = 0; i < 2; ++i) {
+						is.push_back(vs);
+						is.push_back(vs + 1);
+						is.push_back(vs + 2);
+						is.push_back(vs + 0);
+						is.push_back(vs + 2);
+						is.push_back(vs + 3);
+						vs += 4;
+					}
+				}
+			}
+}
+
 MesherAllocation meshChunk(expandedChunk const &cch) {
 	std::vector<vertex> vertices;
 	std::array<std::vector<u16>, textureCount> isPerTexture;
@@ -228,6 +289,7 @@ MesherAllocation meshChunk(expandedChunk const &cch) {
 	meshFace<3>(cch, vertices, isPerTexture);
 	meshFace<4>(cch, vertices, isPerTexture);
 	meshFace<5>(cch, vertices, isPerTexture);
+	meshFoliage(cch, vertices, isPerTexture);
 
 	MesherAllocation result;
 	std::vector<u16> indicesFlat;
@@ -238,6 +300,7 @@ MesherAllocation meshChunk(expandedChunk const &cch) {
 			MesherAllocation::Mesh mm;
 			mm.texture = i;
 			mm.count = m.size();
+			mm.flags = i == 8 ? 0b11 : 0; // todo better handling
 			for (auto i: m)
 				indicesFlat.push_back(i);
 			result.meshes.push_back(mm);
@@ -327,6 +390,10 @@ void freeMesh(MesherAllocation &alloc) {
 		linearFree(alloc.indices);
 }
 
-BlockVisual const &getBlockVisual(u16 block) {
-	return blockVisuals[block - 1];
+BlockVisual getBlockVisual(Block block) {
+	if (block.isSolid())
+		return { BlockVisual::Type::Solid, solidVisuals[(block.value >> 8) & 0x7f]};
+	if (block.isFoliage())
+		return { BlockVisual::Type::Foliage, foliageVisuals[(block.value >> 8) & 0x3f]};
+	return {};
 }
