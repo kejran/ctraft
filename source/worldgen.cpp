@@ -43,7 +43,7 @@ Column &generateColumn(s16 cx, s16 cy) {
 
 			b.grass = (simpleHash(x, y, 0) & 0xf) == 0; // 1 in 16
 
-			b.tree = (simpleHash(x, y, 0) & 0xff) == 5; // 1 in 256
+			b.tree = (simpleHash(x, y, 0) & 0x3f) == 5; // 1 in 64
 		}
 
 	return c;
@@ -84,16 +84,6 @@ INLINE Block blockAt(Column &c, int locX, int locY, int x, int y, int z) {
 		}
 	}
 }
-
-using stamp = std::tuple<s16, s16, int, Block>;
-
-struct stampList {
-	std::vector<stamp> stamps;
-	void add(int x, int y, int z, Block block) {
-		if (x >= 0 && y >= 0 && x < chunkSize && y < chunkSize)
-			stamps.push_back({ (s16)x, (s16)y, z, block });
-	}
-};
 
 void treeStamp(int x, int y, int z, stampList &stamps) {
 
@@ -140,9 +130,10 @@ chunk *generateChunk(s16 cx, s16 cy, s16 cz) {
 				(*data)[lz][ly][lx] = block;
 		}
 
-	stampList stamps;
-	generateStamps(cx, cy, stamps);
-	for (auto [x, y, z, block]: stamps.stamps) {
+	if (!column.stampsGenerated)
+		generateStamps(cx, cy, column.stamps);
+	
+	for (auto [x, y, z, block]: column.stamps.stamps) {
 		z -= cz * chunkSize;
 		if (z >= 0 && z < chunkSize)
 			(*data)[z][y][x] = block;
