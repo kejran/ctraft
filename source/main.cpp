@@ -397,11 +397,13 @@ void handleTouch() {
 		touchPosition t;
 		hidTouchRead(&t);
 
-		int x = (t.px / 40) - (160/40) + 2;
-		int y = (t.py / 40) - (120/40) + 1;
-
-		if (x >= 0 && y >= 0 && x < 4 && y < 2) {
+		int x = ((int)t.px - 160 + 4*20) / 40;
+		int y = ((int)t.py - 120 + 3*20) / 40;
+		
+		if (x >= 0 && y >= 0 && x < 4 && y < 3) {
 			int id = x + y * 4;
+			if (id >= 12)
+				return;
 			selectedBlock = id;
 		}
 	}
@@ -483,7 +485,7 @@ void handlePlayer(float delta) {
 
 	if (kDown & KEY_DLEFT) --selectedBlock;
 	if (kDown & KEY_DRIGHT) ++selectedBlock;
-	selectedBlock &= 7;
+	selectedBlock %= 12;
 
 	fvec3 dir {
 		sinf(angleX) * cosf(angleY),
@@ -815,6 +817,8 @@ void mainLoop() {
 	render(player.pos, angleX, angleY, drawFocus ? &playerFocus : nullptr, slider);
 }
 
+// #define CITRA_PROFILE
+
 int main() {
 
 	bool console = false;
@@ -822,7 +826,7 @@ int main() {
 	hidScanInput();
 	u32 keys = hidKeysHeld();
 
-	#ifdef PROFILER
+	#if (defined(PROFILER) && defined(CITRA_PROFILE))
 	// Enter debug mode when holding dpad-up or running on JPN/"wonky" system.
 	// Citra seems to return/fail to JPN so check for that;
 	// While I doubt many Japanese people would be interested in playing this,

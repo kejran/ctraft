@@ -86,7 +86,7 @@ struct BlockVisual {
 	std::array<u8, 6> faces;
 };
 
-static constexpr int textureCount = 10;
+static constexpr int textureCount = 1 + 12;
 
 static constexpr float invTickRate = 1.0f / SYSCLOCK_ARM11;
 

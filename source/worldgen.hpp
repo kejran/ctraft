@@ -8,6 +8,7 @@ namespace worldgen {
 struct BlockColumn {
     int height;
     bool grass;
+    u8 tree;
 };
 
 struct Column {

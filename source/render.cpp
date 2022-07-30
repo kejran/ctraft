@@ -17,6 +17,7 @@
 #include "tallgrass_pt3x.h"
 #include "log_oak_pt3x.h"
 #include "log_oak_top_pt3x.h"
+#include "leaves_oak_opaque_pt3x.h"
 
 #include "terrain_shbin.h"
 #include "focus_shbin.h"
@@ -138,7 +139,7 @@ void topUI() {
 }
 
 void bottomUI() {
-	const int blockCount = 8;
+	const int blockCount = 10;
 	const int size = 32;
 	Tex3DS_SubTexture sub { size, size, 0, 1, 1, 0 };
 	C2D_Image img;
@@ -150,7 +151,7 @@ void bottomUI() {
 		img.tex = &textures[getBlockVisual(Block::solid(i-1)).faces[0] + 1]; // -Y
 		C2D_DrawImageAt(img,
 			160 - (4 * spacing / 2) + (spacing - size) / 2 + x * spacing,
-			120 - (2 * spacing / 2) + (spacing - size) / 2 + y * spacing,
+			120 - (3 * spacing / 2) + (spacing - size) / 2 + y * spacing,
 			1);
 	}
 }
@@ -314,6 +315,7 @@ textureData_t textureData[] = {
 	_t(tallgrass),
 	_t(log_oak),
 	_t(log_oak_top),
+	_t(leaves_oak_opaque),
 };
 #undef t
 

@@ -69,6 +69,9 @@ static constexpr std::array<u8, 6> solidVisuals[] = {
 	{ 4, 4, 4, 4, 4, 4 }, // coal
 	{ 6, 6, 6, 6, 6, 6 }, // sand
 	{ 7, 7, 7, 7, 7, 7 }, // planks
+
+	{ 9, 9, 9, 9, 10, 10 }, // oak log
+	{ 11, 11, 11, 11, 11, 11 }, // oak leaves
 };
 
 static constexpr std::array<u8, 6> foliageVisuals[] = {
