@@ -57,9 +57,54 @@ Column &getColumn(s16 x, s16 y) {
 		return it->second;
 }
 
+constexpr float tunnelScaleXY = 1.0f / 48;
+constexpr float tunnelScaleZ = 1.0f / 32;
+constexpr float tunnelThreshold = 0.04f;
+constexpr float tunnelZeroCutoff = -chunkSize*2 + 8;
+
+constexpr float simplexSamplingOffset = 0.4330127018922193f;
+
+//https://github.com/KdotJPG/Cave-Tech-Demo
+//carver/DerivativeTunnelClosingCaveCarver.java
+
+INLINE bool isTunnel(int x, int y, int z) {
+
+	// todo maybe compute outside?
+	float _x = x * tunnelScaleXY;
+	float _y = y * tunnelScaleXY;
+
+	float z1 = z * tunnelScaleZ;
+	float z2 = z1 + simplexSamplingOffset;
+
+	float noise1 = noise3d(1, _x, _y, z1);
+
+	float density = noise1 * noise1;
+	if (density >= tunnelThreshold)
+		return false;
+
+	float noise2 = noise3d(2, _x, _y, z2);
+	density += noise2 * noise2;
+	if (density >= tunnelThreshold)
+		return false;
+
+	int belowCutoff = tunnelZeroCutoff - z;
+	if (belowCutoff > 0) {
+		density += (belowCutoff * tunnelThreshold / 6);
+		if (density >= tunnelThreshold)
+		return false;
+	}
+
+	// todo: potentially compute derivatives, etc.
+
+	return true;
+}
+
 }
 
 INLINE Block blockAt(Column &c, int locX, int locY, int x, int y, int z) {
+
+	if (isTunnel(x, y, z))
+		return { 0 };
 
 	auto &cc = c.blocks[locY][locX];
 
@@ -72,7 +117,7 @@ INLINE Block blockAt(Column &c, int locX, int locY, int x, int y, int z) {
 		if (z < cc.height - 3) { // 3 blocks below
 			const float sc = 0.1f;
 			float noise = noise3d(0, x*sc, y*sc, z*sc);
-			if (noise > 0.5f) // rather rare 3d noise
+			if (noise > 0.75f) // rather rare 3d noise
 				return Block::solid(4); // generate coal
 			else
 				return Block::solid(2); // generate stone
@@ -87,14 +132,13 @@ INLINE Block blockAt(Column &c, int locX, int locY, int x, int y, int z) {
 
 void treeStamp(int x, int y, int z, stampList &softStamps, stampList &hardStamps) {
 
-
 	for (int lz = 0; lz < 2; ++lz)
 		for (int ly = -1; ly < 2; ++ly)
 			for (int lx = -1; lx < 2; ++lx)
 				if (lz != 2 || ly == 0 || lx == 0)
 					softStamps.add(x + lx, y + ly, 2 + z + lz, Block::solid(8));
 
-	const int branches = 5;  
+	const int branches = 5;
 	for (int i = 0; i < branches; ++i) {
 
 		auto h = simpleHash(x, y, z + i);
@@ -108,7 +152,6 @@ void treeStamp(int x, int y, int z, stampList &softStamps, stampList &hardStamps
 					if (lz != 2 || ly == 0 || lx == 0)
 						if (simpleHash(lz, ly, lx + i) & 0x3)
 							softStamps.add(bx + x + lx, by + y + ly, bz + 2 + z + lz, Block::solid(8));
-
 	}
 
 	for (int iz = 0; iz < 3; ++iz)
@@ -133,6 +176,21 @@ void generateStamps(s16 cx, s16 cy, stampList &softStamps, stampList &hardStamps
 		}
 }
 
+void placeStamps(chunk &data, int offZ, stampList &softStamps, stampList &hardStamps) {
+	for (auto [x, y, z, block]: hardStamps.stamps) {
+		z += offZ;
+		if (z >= 0 && z < chunkSize)
+			data[z][y][x] = block;
+	}
+
+	for (auto [x, y, z, block]: softStamps.stamps) {
+		z += offZ;
+		if (z >= 0 && z < chunkSize)
+			if (data[z][y][x].isAir())
+				data[z][y][x] = block;
+	}
+}
+
 chunk *generateChunk(s16 cx, s16 cy, s16 cz) {
 
     auto data = new chunk();
@@ -150,19 +208,8 @@ chunk *generateChunk(s16 cx, s16 cy, s16 cz) {
 
 	if (!column.stampsGenerated)
 		generateStamps(cx, cy, column.softStamps, column.hardStamps);
-	
-	for (auto [x, y, z, block]: column.hardStamps.stamps) {
-		z -= cz * chunkSize;
-		if (z >= 0 && z < chunkSize)
-			(*data)[z][y][x] = block;
-	}
 
-	for (auto [x, y, z, block]: column.softStamps.stamps) {
-		z -= cz * chunkSize;
-		if (z >= 0 && z < chunkSize)
-			if ((*data)[z][y][x].isAir())
-				(*data)[z][y][x] = block;
-	}
+	placeStamps(*data, -cz * chunkSize, column.softStamps, column.hardStamps);
 
 	return data;
 }

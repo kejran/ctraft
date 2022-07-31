@@ -540,9 +540,11 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 						GPU_GREATER, 0x7f);
 				}
 				oldFlags = m.flags;
+				C3D_TexBind(0, &textures[m.texture + 1]); 
+				// todo fix funk modes to count offsets
 				// if ((idx.x^idx.y^idx.z) & 1) continue; // funk mode
 				// if (idx.x&1 || idx.y & 1 || idx.z & 1) continue; // DISCO FEVER MODE
-				C3D_TexBind(0, &textures[m.texture + 1]);
+				// if (m.texture != 2 && m.texture != 1) // caveman mode
 				C3D_DrawElements(
 					GPU_TRIANGLES,
 					m.count,
