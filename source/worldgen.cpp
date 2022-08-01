@@ -1,6 +1,7 @@
 #include "worldgen.hpp"
 
 #include "noise.hpp"
+#include "dcsimplex.hpp"
 #include <unordered_map>
 
 using namespace worldgen;
@@ -57,44 +58,59 @@ Column &getColumn(s16 x, s16 y) {
 		return it->second;
 }
 
+dcs::Seed n1(0);
+dcs::Seed n2(1);
+
 constexpr float tunnelScaleXY = 1.0f / 48;
 constexpr float tunnelScaleZ = 1.0f / 32;
-constexpr float tunnelThreshold = 0.04f;
+constexpr float tunnelThreshold = 0.2f;
+constexpr float tunnelThreshold2 = tunnelThreshold*tunnelThreshold;
 constexpr float tunnelZeroCutoff = -chunkSize*2 + 8;
+constexpr float tunnelClosing = 2.0f;
 
 constexpr float simplexSamplingOffset = 0.4330127018922193f;
 
 //https://github.com/KdotJPG/Cave-Tech-Demo
 //carver/DerivativeTunnelClosingCaveCarver.java
 
-INLINE bool isTunnel(int x, int y, int z) {
-
-	// todo maybe compute outside?
-	float _x = x * tunnelScaleXY;
-	float _y = y * tunnelScaleXY;
+// INLINE bool isTunnel(dcsimplex_generator *gen1, dcsimplex_generator *gen2, int z) {
+INLINE bool isTunnel(dcs::DrvGenerator &gen1, dcs::DrvGenerator &gen2, int z) {
 
 	float z1 = z * tunnelScaleZ;
 	float z2 = z1 + simplexSamplingOffset;
 
-	float noise1 = noise3d(1, _x, _y, z1);
-
+	float noise1 = gen1.sample(z1);
 	float density = noise1 * noise1;
-	if (density >= tunnelThreshold)
+	if (density >= tunnelThreshold2)
 		return false;
 
-	float noise2 = noise3d(2, _x, _y, z2);
+	float noise2 = gen2.sample(z2);
 	density += noise2 * noise2;
-	if (density >= tunnelThreshold)
+	if (density >= tunnelThreshold2)
 		return false;
+
+	std::array<float, 4> dx1;
+	gen1.sampleDrv(dx1, z1);
+	std::array<float, 4> dx2;
+	gen2.sampleDrv(dx2, z2);
+
+	float noiseDeltaMagSq1 = dx1[1]*dx1[1] + dx1[2]*dx1[2] + dx1[3]*dx1[3];
+	float noiseDeltaMagSq2 = dx2[1]*dx2[1] + dx2[2]*dx2[2] + dx2[3]*dx2[3];
+	float noiseDeltaDot = dx1[1]*dx2[1] + dx1[2]*dx2[2] + dx1[3]*dx2[3];
+
+	float sqNormDot = (noiseDeltaDot * noiseDeltaDot) / (noiseDeltaMagSq1 * noiseDeltaMagSq2);
+
+	float caveClosing = (sqNormDot * sqNormDot) * (tunnelThreshold2 * tunnelClosing);
+	density += caveClosing;
+	if (density >= tunnelThreshold2)
+	 	return false;
 
 	int belowCutoff = tunnelZeroCutoff - z;
 	if (belowCutoff > 0) {
-		density += (belowCutoff * tunnelThreshold / 6);
-		if (density >= tunnelThreshold)
+		density += (belowCutoff * tunnelThreshold2 / 6);
+		if (density >= tunnelThreshold2)
 		return false;
 	}
-
-	// todo: potentially compute derivatives, etc.
 
 	return true;
 }
@@ -102,9 +118,6 @@ INLINE bool isTunnel(int x, int y, int z) {
 }
 
 INLINE Block blockAt(Column &c, int locX, int locY, int x, int y, int z) {
-
-	if (isTunnel(x, y, z))
-		return { 0 };
 
 	auto &cc = c.blocks[locY][locX];
 
@@ -194,16 +207,32 @@ void placeStamps(chunk &data, int offZ, stampList &softStamps, stampList &hardSt
 chunk *generateChunk(s16 cx, s16 cy, s16 cz) {
 
     auto data = new chunk();
-	int x = cx << chunkBits; int y = cy << chunkBits; int z = cz << chunkBits;
+	int x = (int)cx << chunkBits; int y = (int)cy << chunkBits; int z = (int)cz << chunkBits;
 
 	auto &column = getColumn(cx, cy);
 
+	dcs::DrvGenerator gen1(n1);
+	dcs::DrvGenerator gen2(n2);
+
 	for (int lx = 0; lx < chunkSize; ++lx)
-		for (int ly = 0; ly < chunkSize; ++ly)
+		for (int ly = 0; ly < chunkSize; ++ly) {
+			int _x = x + lx; int _y = y + ly;
+
+			gen1.reset(_x * tunnelScaleXY, _y * tunnelScaleXY);
+			gen2.reset(_x * tunnelScaleXY, _y * tunnelScaleXY);
+
 			for (int lz = 0; lz < chunkSize; ++lz) {
-				int _x = x + lx; int _y = y + ly; int _z = z + lz;
-				auto block = blockAt(column, lx, ly, _x, _y, _z);
-				(*data)[lz][ly][lx] = block;
+
+				int _z = z + lz;
+
+				if (isTunnel(gen1, gen2, _z))
+					(*data)[lz][ly][lx] = { 0 };
+
+				else {
+					auto block = blockAt(column, lx, ly, _x, _y, _z);
+					(*data)[lz][ly][lx] = block;
+				}
+			}
 		}
 
 	if (!column.stampsGenerated)

@@ -850,8 +850,8 @@ int main() {
 	tick = svcGetSystemTick();
 
 	player.pos.z = 12;
-	player.pos.x = -5;
-	player.pos.y = 5;
+	player.pos.x = 0;
+	player.pos.y = 0;
 
 	runMode = RunMode::Loading;
 	while (aptMainLoop() && runMode != RunMode::Closing)
