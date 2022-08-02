@@ -167,35 +167,42 @@ void moveAndCollide(fvec3 &position, fvec3 &velocity, float delta, float radius,
 // https://github.com/fenomas/fast-voxel-raycast/blob/master/index.js
 bool raycast(fvec3 eye, fvec3 dir, float maxLength, vec3<s32> &out, vec3<s32> &normal) {
 
-	float norm = 1 / sqrtf(dir.x*dir.x*+dir.y*dir.y+dir.z*dir.z);
-	dir.x *= norm; dir.y *= norm; dir.z *= norm;
+	float norm = 1 / sqrtf(dir.x*dir.x + dir.y*dir.y + dir.z*dir.z);
+	dir.x *= norm;
+	dir.y *= norm;
+	dir.z *= norm;
 
-	int ix = fastFloor(eye.x); int iy = fastFloor(eye.y); int iz = fastFloor(eye.z);
-	int stepx = (dir.x > 0) ? 1 : -1, stepy = (dir.y > 0) ? 1 : -1, stepz = (dir.z > 0) ? 1 : -1;
+	int ix = fastFloor(eye.x);
+	int iy = fastFloor(eye.y);
+	int iz = fastFloor(eye.z);
 
-	float txDelta = fabsf(1 / dir.x), tyDelta = fabsf(1 / dir.y), tzDelta = fabsf(1 / dir.z);
+	int stepx = (dir.x > 0.0f) ? 1 : -1;
+	int stepy = (dir.y > 0.0f) ? 1 : -1;
+	int stepz = (dir.z > 0.0f) ? 1 : -1;
+
+	// divide by abs so it goes to +inf instead of ±inf
+	float txDelta = 1.0f / fabsf(dir.x);
+	float tyDelta = 1.0f / fabsf(dir.y);
+	float tzDelta = 1.0f / fabsf(dir.z);
 
 	float xdist = (stepx > 0) ? (ix + 1 - eye.x) : (eye.x - ix);
 	float ydist = (stepy > 0) ? (iy + 1 - eye.y) : (eye.y - iy);
 	float zdist = (stepz > 0) ? (iz + 1 - eye.z) : (eye.z - iz);
 
-	float txMax = (txDelta < 9999) ? txDelta * xdist : 9999;
-	float tyMax = (tyDelta < 9999) ? tyDelta * ydist : 9999;
-	float tzMax = (tzDelta < 9999) ? tzDelta * zdist : 9999;
+	float txMax = (txDelta < 9999) ? txDelta * xdist : 99999;
+	float tyMax = (tyDelta < 9999) ? tyDelta * ydist : 99999;
+	float tzMax = (tzDelta < 9999) ? tzDelta * zdist : 99999;
 
 	int steppedIndex = -1;
 	float t_ = 0;
 
-	int i = 0;
 	while (t_ <= maxLength) {
-		if (i++ > (1+maxLength)*3)
-			return false; // todo the distance check is buggy... fix it later
 
 		// exit check
 		auto b = tryGetBlock(ix, iy, iz);
 		if (b.value == 0xffff) // todo extract it out somewhere
 			return false;
-		if (b.isSolid()) {
+		if (b.isSolid() || b.isFoliage()) {
 			out.x = ix; out.y = iy; out.z = iz;
 			normal = {0, 0, 0};
 			if (steppedIndex == 0) normal.x = (stepx < 0) ? 1 : -1;
@@ -399,7 +406,7 @@ void handleTouch() {
 
 		int x = ((int)t.px - 160 + 4*20) / 40;
 		int y = ((int)t.py - 120 + 3*20) / 40;
-		
+
 		if (x >= 0 && y >= 0 && x < 4 && y < 3) {
 			int id = x + y * 4;
 			if (id >= 12)
