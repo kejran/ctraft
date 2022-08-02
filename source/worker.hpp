@@ -4,7 +4,7 @@
 #include "mesher.hpp"
 
 struct Task {
-    enum class Type {
+    enum class Type: u8 {
         GenerateChunk,
         MeshChunk,
         Tag,
@@ -18,10 +18,13 @@ struct Task {
         } chunk;
     };
     Type type;
+    u8 flags; 
+
+    static constexpr int TASK_VISIBILITY = 1;
 };
 
 struct TaskResult {
-    enum class Type {
+    enum class Type: u8 {
         ChunkData,
         ChunkMesh,
         Tag,
@@ -34,9 +37,12 @@ struct TaskResult {
                 MesherAllocation *alloc;
             };
             s16 x, y, z;
+            u8 visibility;
         } chunk;
     };
     Type type;
+    u8 flags;
+    static constexpr int RESULT_VISIBILITY = 1;
 };
 
 void startWorker();

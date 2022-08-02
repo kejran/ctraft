@@ -7,7 +7,7 @@ struct ChunkMetadata {
 	MesherAllocation allocation;
 	C3D_BufInfo vertexBuffer;
 	chunk *data = nullptr;
-	u8 sideSolid = 0;
+	u8 visibility = 0;
 	bool meshed = false;
 };
 

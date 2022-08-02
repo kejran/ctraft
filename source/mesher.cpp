@@ -400,3 +400,45 @@ BlockVisual getBlockVisual(Block block) {
 		return { BlockVisual::Type::Foliage, foliageVisuals[(block.value >> 8) & 0x3f]};
 	return {};
 }
+
+u8 getSidesOpaque(expandedChunk const &ch) {
+	u8 result = 0x3f;
+	 
+	for (int v = 0; v < chunkSize; ++v)
+		for (int u = 0; u < chunkSize; ++u) {
+			if (ch[v+1][u+1][1].isNonSolid())
+				result &= 0b11'11'10;
+			if (ch[v+1][u+1][chunkSize].isNonSolid())
+				result &= 0b11'11'01;
+			if (ch[v+1][1][u+1].isNonSolid())
+				result &= 0b11'10'11;
+			if (ch[v+1][chunkSize][u+1].isNonSolid())
+				result &= 0b11'01'11;
+			if (ch[1][v+1][u+1].isNonSolid())
+				result &= 0b10'11'11;
+			if (ch[chunkSize][v+1][u+1].isNonSolid())
+				result &= 0b01'11'11;
+		}
+	return result;
+}
+
+u8 getSidesOpaque(chunk const &ch) {
+	u8 result = 0x3f;
+	 
+	for (int v = 0; v < chunkSize; ++v)
+		for (int u = 0; u < chunkSize; ++u) {
+			if (ch[v][u][0].isNonSolid())
+				result &= 0b11'11'10;
+			if (ch[v][u][chunkSize-1].isNonSolid())
+				result &= 0b11'11'01;
+			if (ch[v][0][u].isNonSolid())
+				result &= 0b11'10'11;
+			if (ch[v][chunkSize-1][u].isNonSolid())
+				result &= 0b11'01'11;
+			if (ch[0][v][u].isNonSolid())
+				result &= 0b10'11'11;
+			if (ch[chunkSize-1][v][u].isNonSolid())
+				result &= 0b01'11'11;
+		}
+	return result;
+}

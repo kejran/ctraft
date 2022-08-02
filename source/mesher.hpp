@@ -35,3 +35,6 @@ void expandChunk(chunk const &ch, std::array<chunk *, 6> const &sides, expandedC
 void freeMesh(MesherAllocation &);
 
 BlockVisual getBlockVisual(Block block);
+
+u8 getSidesOpaque(expandedChunk const &ch);
+u8 getSidesOpaque(chunk const &ch);

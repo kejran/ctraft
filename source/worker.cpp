@@ -42,12 +42,13 @@ void processTask(Task &t) {
 
     switch (t.type) {
 
-        // todo: we might end up with symmetrical enums, monitor it
         case Task::Type::GenerateChunk:
 
             r.type = TaskResult::Type::ChunkData;
             r.chunk.data = generateChunk(t.chunk.x, t.chunk.y, t.chunk.z);
             r.chunk.x = t.chunk.x; r.chunk.y = t.chunk.y; r.chunk.z = t.chunk.z;
+
+            r.chunk.visibility = getSidesOpaque(*r.chunk.data);
 
             postResult(r);
             break;
@@ -55,6 +56,12 @@ void processTask(Task &t) {
         case Task::Type::MeshChunk:
 
             r.type = TaskResult::Type::ChunkMesh;
+
+            if (t.flags & Task::TASK_VISIBILITY) {
+                r.chunk.visibility = getSidesOpaque(*t.chunk.exdata);
+                r.flags |= TaskResult::RESULT_VISIBILITY;
+            }
+
             // todo make these allocs saner
             r.chunk.alloc = new MesherAllocation;
             *r.chunk.alloc = meshChunk(*t.chunk.exdata);

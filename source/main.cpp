@@ -631,7 +631,9 @@ void processWorkerResults() {
 						scheduledChunks[i] = scheduledChunks.back();
 						scheduledChunks.pop_back();
 					}
+				meta.visibility = r.chunk.visibility;
 			} break;
+
 			case TaskResult::Type::ChunkMesh: {
 				s16vec3 idx = { r.chunk.x, r.chunk.y, r.chunk.z };
 				auto &meta = world[idx];
@@ -640,6 +642,9 @@ void processWorkerResults() {
 					freeMesh(meta.allocation);
 
 				meta.allocation = std::move(*r.chunk.alloc);
+
+				if (r.flags & TaskResult::RESULT_VISIBILITY)
+					meta.visibility = r.chunk.visibility;
 
 				if (meta.allocation.vertexCount) {
 					BufInfo_Init(&meta.vertexBuffer);
@@ -655,6 +660,7 @@ void processWorkerResults() {
 						scheduledMeshes.pop_back();
 					}
 			} break;
+
 			default: break;
 		}
 }
