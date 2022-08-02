@@ -208,6 +208,8 @@ void shaderInit() {
 		shaderInstanceGetUniformLocation(shaders.sky.program.vertexShader, "projection");
 }
 
+int chunksDrawn;
+
 const int skyW = 16;
 const int skyH = 10;
 static_assert(skyH * skyW + 1 < 256);
@@ -416,21 +418,55 @@ bool inFrustum(C3D_Mtx const &mtx, s16vec3 v) {
 	return !out;
 }
 
-int chunksDrawn;
 
-void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod) {
+struct {
+
+	fvec3 camera;
+
+	float rotX, rotY;
+
+	vec3<s32> focus; bool drawFocus;
+
+	C3D_Mtx worldView, skyView;
+
+} sceneSetup;
+
+void setupRender(fvec3 &playerPos, float rx, float ry, vec3<s32> *focus) {
+
+	float eyeHeight = 1.5f;
+	sceneSetup.camera = playerPos;
+	sceneSetup.camera.z += eyeHeight;
+
+	sceneSetup.rotX = rx;
+	sceneSetup.rotY = ry;
+	
+	auto mv = &sceneSetup.worldView;
+	Mtx_Identity(mv);
+	Mtx_RotateX(mv, ry, true);
+	Mtx_RotateY(mv, rx, true);
+
+	Mtx_RotateX(mv, -M_PI/2, true);
+	Mtx_Translate(
+		mv, 
+		-sceneSetup.camera.x, 
+		-sceneSetup.camera.y, 
+		-sceneSetup.camera.z, 
+	true);
+
+	auto sv = &sceneSetup.skyView;
+	Mtx_Identity(sv);
+	Mtx_RotateX(sv, ry, true);
+	Mtx_RotateY(sv, rx, true);
+	Mtx_RotateX(sv, -M_PI/2, true);
+
+	sceneSetup.drawFocus = focus != nullptr;
+	if (focus)
+		sceneSetup.focus = *focus;
+}
+
+void sceneRender(float iod) {
 
 	/// --- CALCULATE VIEW --- ///
-
-	C3D_Mtx modelView;
-	Mtx_Identity(&modelView);
-
-	Mtx_RotateX(&modelView, ry, true);
-	Mtx_RotateY(&modelView, rx, true);
-
-	Mtx_RotateX(&modelView, -M_PI/2, true);
-
-	Mtx_Translate(&modelView, -camera.x, -camera.y, -camera.z, true);
 
 	C3D_Mtx perspective;
 	Mtx_PerspStereoTilt(
@@ -441,17 +477,13 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 		iod, 1.5f, false
 		);
 
-	C3D_Mtx localView;
-	Mtx_Identity(&localView);
-	Mtx_RotateX(&localView, ry, true);
-	Mtx_RotateY(&localView, rx, true);
-	Mtx_RotateX(&localView, -M_PI/2, true);
-
 	C3D_Mtx projection;
-	Mtx_Multiply(&projection, &perspective, &modelView);
+	Mtx_Multiply(&projection, &perspective, &sceneSetup.worldView);
 
 	C3D_Mtx projectionSky;
-	Mtx_Multiply(&projectionSky, &perspective, &localView);
+	Mtx_Multiply(&projectionSky, &perspective, &sceneSetup.skyView);
+
+	// todo: draw sky last to save on fillrate
 
 	/// --- DRAW SKY --- ///
 
@@ -502,9 +534,9 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 	C3D_SetAttrInfo(&vertexLayouts.block);
 
 	//todo organize
-	int chX = static_cast<int>(camera.x) >> chunkBits;
-	int chY = static_cast<int>(camera.y) >> chunkBits;
-	int chZ = static_cast<int>(camera.z) >> chunkBits;
+	int chX = static_cast<int>(sceneSetup.camera.x) >> chunkBits;
+	int chY = static_cast<int>(sceneSetup.camera.y) >> chunkBits;
+	int chZ = static_cast<int>(sceneSetup.camera.z) >> chunkBits;
 	int maxDist2 = renderDistance*renderDistance;
 
 	/// --- DRAW BLOCKS --- ///
@@ -560,7 +592,7 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 
 	C3D_FogLutBind(nullptr);
 
-	if (focus) {
+	if (sceneSetup.drawFocus) {
 		C3D_SetTexEnv(0, &texEnvs.solid);
 		C3D_AlphaBlend(
 			GPU_BLEND_ADD, GPU_BLEND_ADD,
@@ -573,7 +605,7 @@ void sceneRender(fvec3 &camera, float rx, float ry, vec3<s32> *focus, float iod)
 		C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaders.focus.locs.projection, &projection);
 		// C3D_FVUnifMtx4x4(GPU_VERTEX_SHADER, shaders.focus.locs.modelView,  &modelView);
 		C3D_FVUnifSet(GPU_VERTEX_SHADER, shaders.focus.locs.blockPos,
-			focus->x, focus->y, focus->z, 0.0f
+			sceneSetup.focus.x, sceneSetup.focus.y, sceneSetup.focus.z, 0.0f
 		);
 
 		C3D_SetAttrInfo(&vertexLayouts.focus);
@@ -599,13 +631,11 @@ void render(fvec3 &playerPos, float rx, float ry, vec3<s32> *focus, float depthS
 	if (should3d != gfxIs3D())
 		gfxSet3D(should3d);
 
-	float eyeHeight = 1.5f;
-
-	fvec3 camera = playerPos;
-	camera.z += eyeHeight;
-
 	u32 timeBeforeSync = svcGetSystemTick();
 	u32 nextTimeAfterSync;
+
+	// todo: this will cache render lists
+	setupRender(playerPos, rx, ry, focus);
 
 	// Render the scene
 	C3D_FrameBegin(C3D_FRAME_SYNCDRAW);
@@ -615,7 +645,7 @@ void render(fvec3 &playerPos, float rx, float ry, vec3<s32> *focus, float depthS
 		C3D_RenderTargetClear(targetLeft, C3D_CLEAR_ALL, CLEAR_COLOR, 0);
 		C3D_FrameDrawOn(targetLeft);
 		C2D_SceneTarget(targetLeft);
-		sceneRender(camera, rx, ry, focus, -iod);
+		sceneRender(-iod);
 		C2D_Prepare();
 		topUI();
 		C2D_Flush();
@@ -625,7 +655,7 @@ void render(fvec3 &playerPos, float rx, float ry, vec3<s32> *focus, float depthS
 			C3D_RenderTargetClear(targetRight, C3D_CLEAR_ALL, CLEAR_COLOR, 0);
 			C3D_FrameDrawOn(targetRight);
 			C2D_SceneTarget(targetRight);
-			sceneRender(camera, rx, ry, focus, iod);
+			sceneRender(iod);
 			C2D_Prepare();
 			topUI();
 			C2D_Flush();
