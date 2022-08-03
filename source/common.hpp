@@ -95,7 +95,7 @@ constexpr int zChunks = 2; // 5 chunks = 80 blocks of height total
 
 INLINE int fastFloor(float f) { return (f >= 0 ? (int)f : (int)f - 1); }
 
-#define PROFILER
+// #define PROFILER
 
 #ifdef PROFILER
 inline u32 _customProfileStart = 0;

@@ -4,6 +4,7 @@
 
 #include "mesher.hpp"
 #include "world.hpp"
+#include "pixelfont.hpp"
 
 #include "coal_ore_pt3x.h"
 #include "cobblestone_pt3x.h"
@@ -121,6 +122,10 @@ constexpr float farPlane = (renderDistance + 1) * chunkSize;
 std::array<C3D_Tex, textureCount> textures;
 // cursor, dirt, grass s, grass t, stone
 
+PixelFont pfont;
+C3D_Tex fonttex;
+PixelText ptext;
+
 void topUI() {
 	C2D_Image image;
 	image.tex = &textures[0];
@@ -155,9 +160,6 @@ void bottomUI() {
 			1);
 	}
 }
-
-C2D_Text loadText;
-C2D_TextBuf loadTextBuf;
 
 // Helper function for loading a texture from memory
 bool loadTextureFromMem(C3D_Tex* tex, C3D_TexCube* cube, const void* data, size_t size) {
@@ -389,9 +391,13 @@ void renderInit(bool bottomScreen) {
 	generateSky();
 	resourceInit();
 
-	loadTextBuf = C2D_TextBufNew(32);
-	C2D_TextParse(&loadText, loadTextBuf, "loading...");
-	C2D_TextOptimize(&loadText);
+	auto file = fopen("romfs:/peanutmoney2.t3x", "r"); if (!file) while(1);
+	Tex3DS_Texture t3x = Tex3DS_TextureImportStdio(file, &fonttex, nullptr, false);
+	Tex3DS_TextureFree(t3x);
+	fclose(file);
+	file = fopen("romfs:/peanutmoney.fnt", "r");
+	pfont.init(fonttex, file);
+	fclose(file);
 }
 
 // this is not working well... debug it later, too tired for this now
@@ -737,9 +743,10 @@ void renderLoading() {
 		C2D_SceneTarget(targetLeft);
 		C2D_Prepare();
 
-		float w, h;
-		C2D_TextGetDimensions(&loadText, 1, 1, &w, &h);
-		C2D_DrawText(&loadText, C2D_WithColor, 200-w/2, 120-h/2, 1, 1, 1, 0xeeeeeeff);
+		int off = -80;
+		ptext.init(pfont, 4, 200+off, 120-4*8);
+		ptext.addString("loading...");
+		ptext.draw();
 
 		C2D_Flush();
 

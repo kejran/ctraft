@@ -830,16 +830,18 @@ void mainLoop() {
 	render(player.pos, angleX, angleY, drawFocus ? &playerFocus : nullptr, slider);
 }
 
-// #define CITRA_PROFILE
+// #define CITRA_CONSOLE
 
 int main() {
+
+	romfsInit();
 
 	bool console = false;
 
 	hidScanInput();
 	u32 keys = hidKeysHeld();
 
-	#if (defined(PROFILER) && defined(CITRA_PROFILE))
+	#ifdef CITRA_CONSOLE
 	// Enter debug mode when holding dpad-up or running on JPN/"wonky" system.
 	// Citra seems to return/fail to JPN so check for that;
 	// While I doubt many Japanese people would be interested in playing this,
@@ -884,6 +886,8 @@ int main() {
 			freeMesh(meta.allocation);
 
 	renderExit();
+
+	romfsExit();
 
 	return 0;
 }
