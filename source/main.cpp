@@ -75,8 +75,10 @@ void handleTouch() {
 		int x = ((int)t.px - 160 + 6*20) / 40;
 		int y = ((int)t.py - 120 + 3*20) / 40;
 
-		if (x >= 0 && y >= 0 && x < 6 && y < 5) {
+		if (x >= 0 && y >= 0 && x < 6 && y < 4) {
 			int id = x + y * 8;
+			if (getBlockVisual(Block::solid(id)).faces[0] == 255)
+				return;
 
 			selectedBlock = id;
 		}
@@ -106,7 +108,7 @@ void handlePlayer(float delta) {
 		{player.pos.x, player.pos.y, player.pos.z + 1.5f},
 		dir, 4, playerFocus, normal)
 	) {
-		if (selectedBlock && (kDown & (KEY_Y | KEY_R))) {
+		if (kDown & (KEY_Y | KEY_R)) {
 			int nx = playerFocus.x + normal.x;
 			int ny = playerFocus.y + normal.y;
 			int nz = playerFocus.z + normal.z;
