@@ -1,0 +1,37 @@
+name: Build
+
+on:
+  workflow_dispatch
+
+jobs:
+  build:      
+
+    runs-on: ubuntu-latest
+
+    env:
+      DEVKITPRO: /opt/devkitpro
+      DEVKITARM: /opt/devkitpro/devkitARM
+
+    steps:
+    - uses: actions/checkout@v3
+    - name: Install pacman
+      run: |
+        sudo mkdir -p /usr/local/share/keyring/
+        sudo wget -O /usr/local/share/keyring/devkitpro-pub.gpg https://apt.devkitpro.org/devkitpro-pub.gpg
+        echo "deb [signed-by=/usr/local/share/keyring/devkitpro-pub.gpg] https://apt.devkitpro.org stable main" | sudo tee -a /etc/apt/sources.list.d/devkitpro.list
+        sudo apt update
+        sudo apt install -y devkitpro-pacman
+    - name: Install devkitARM
+      run: |
+        sudo dkp-pacman -Sy
+        sudo dkp-pacman --noconfirm -S citro2d citro3d tex3ds picasso general-tools 3dstools
+    - name: make 
+      run: |
+        mkdir romfs/blocks
+        make 
+    - uses: actions/upload-artifact@v3
+      with:
+        name: build
+        path: |
+          ctraft.3dsx
+          ctraft.smdh
