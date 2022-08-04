@@ -404,13 +404,12 @@ void handleTouch() {
 		touchPosition t;
 		hidTouchRead(&t);
 
-		int x = ((int)t.px - 160 + 4*20) / 40;
+		int x = ((int)t.px - 160 + 6*20) / 40;
 		int y = ((int)t.py - 120 + 3*20) / 40;
 
-		if (x >= 0 && y >= 0 && x < 4 && y < 3) {
-			int id = x + y * 4;
-			if (id >= 12)
-				return;
+		if (x >= 0 && y >= 0 && x < 6 && y < 5) {
+			int id = x + y * 8;
+
 			selectedBlock = id;
 		}
 	}
@@ -490,9 +489,9 @@ void handlePlayer(float delta) {
 
 	moveAndCollide(player.pos, player.velocity, delta, 0.4f, 2);
 
-	if (kDown & KEY_DLEFT) --selectedBlock;
-	if (kDown & KEY_DRIGHT) ++selectedBlock;
-	selectedBlock %= 12;
+	// if (kDown & KEY_DLEFT) --selectedBlock;
+	// if (kDown & KEY_DRIGHT) ++selectedBlock;
+	// selectedBlock %= 12;
 
 	fvec3 dir {
 		sinf(angleX) * cosf(angleY),
@@ -504,7 +503,7 @@ void handlePlayer(float delta) {
 
 	if (raycast(
 		{player.pos.x, player.pos.y, player.pos.z + 1.5f},
-		dir, 3, playerFocus, normal)
+		dir, 4, playerFocus, normal)
 	) {
 		if (selectedBlock && (kDown & (KEY_Y | KEY_R))) {
 			int nx = playerFocus.x + normal.x;
@@ -516,7 +515,7 @@ void handlePlayer(float delta) {
 
 			if (ch) {
 				int lx = nx & chunkMask, ly = ny & chunkMask, lz = nz & chunkMask;
-				(*ch->data)[lz][ly][lx] = Block::solid(selectedBlock - 1);
+				(*ch->data)[lz][ly][lx] = Block::solid(selectedBlock);
 				markBlockDirty(lx, ly, lz, idx);
 			}
 		}

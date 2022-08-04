@@ -131,7 +131,7 @@ INLINE Block blockAt(Column &c, int locX, int locY, int x, int y, int z) {
 			const float sc = 0.1f;
 			float noise = noise3d(0, x*sc, y*sc, z*sc);
 			if (noise > 0.75f) // rather rare 3d noise
-				return Block::solid(4); // generate coal
+				return Block::solid(8); // generate coal
 			else
 				return Block::solid(2); // generate stone
 		} else {
@@ -149,7 +149,7 @@ void treeStamp(int x, int y, int z, stampList &softStamps, stampList &hardStamps
 		for (int ly = -1; ly < 2; ++ly)
 			for (int lx = -1; lx < 2; ++lx)
 				if (lz != 2 || ly == 0 || lx == 0)
-					softStamps.add(x + lx, y + ly, 2 + z + lz, Block::solid(8));
+					softStamps.add(x + lx, y + ly, 2 + z + lz, Block::solid(25));
 
 	const int branches = 5;
 	for (int i = 0; i < branches; ++i) {
@@ -164,11 +164,11 @@ void treeStamp(int x, int y, int z, stampList &softStamps, stampList &hardStamps
 				for (int lx = -1; lx < 2; ++lx)
 					if (lz != 2 || ly == 0 || lx == 0)
 						if (simpleHash(lz, ly, lx + i) & 0x3)
-							softStamps.add(bx + x + lx, by + y + ly, bz + 2 + z + lz, Block::solid(8));
+							softStamps.add(bx + x + lx, by + y + ly, bz + 2 + z + lz, Block::solid(25));
 	}
 
 	for (int iz = 0; iz < 3; ++iz)
-		hardStamps.add(x, y, z + iz, Block::solid(7));
+		hardStamps.add(x, y, z + iz, Block::solid(24));
 }
 
 void generateTreeStamps(Column const &c, s16 offX, s16 offY, stampList &softStamps, stampList &hardStamps) {

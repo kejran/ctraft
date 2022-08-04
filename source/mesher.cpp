@@ -65,18 +65,31 @@ static constexpr std::array<u8, 6> solidVisuals[] = {
 	{ 0, 0, 0, 0, 0, 0 }, // dirt
 	{ 1, 1, 1, 1, 0, 2 }, // grass
 	{ 3, 3, 3, 3, 3, 3 }, // stone
-	{ 5, 5, 5, 5, 5, 5 }, // cobble
-	{ 4, 4, 4, 4, 4, 4 }, // coal
-	{ 6, 6, 6, 6, 6, 6 }, // sand
-	{ 7, 7, 7, 7, 7, 7 }, // planks
+	{ 4, 4, 4, 4, 4, 4 }, // cobble
+	{ 5, 5, 5, 5, 5, 5 }, // sand
+	{ 6, 6, 6, 6, 6, 6 }, // gravel
+	{ 255 }, { 255 }, 
 
-	{ 9, 9, 9, 9, 10, 10 }, // oak log
-	{ 11, 11, 11, 11, 11, 11 }, // oak leaves
+	// 8
+	{ 8, 8, 8, 8, 8, 8 }, // coal
+	{ 9, 9, 9, 9, 9, 9 }, // iron
+	{ 255 }, { 255 }, { 255 }, { 255 }, { 255 }, { 255 },
+
+	// 16
+	{ 17, 17, 17, 16, 27, 18 }, // crafting 
+	{ 22, 22, 22, 20, 23, 23 }, // smelter
+	{ 255 }, { 255 }, { 255 }, { 255 }, { 255 }, { 255 },
+
+	// 24
+	{ 24, 24, 24, 24, 25, 25 }, // oak log
+	{ 26, 26, 26, 26, 26, 26 }, // oak leaves
+	{ 27, 27, 27, 27, 27, 27 }, // oak planks
+	{ 255 }, { 255 }, { 255 }, { 255 }, { 255 }
 };
 
 static constexpr std::array<u8, 6> foliageVisuals[] = {
-	{},     // dummy
-	{ 8,  8 },	// grass
+	{},     		// dummy
+	{ 28,  28 },	// grass
 };
 
 INLINE s8vec3 _V8(int x, int y, int z) {
@@ -144,7 +157,7 @@ template <int s>
 INLINE void meshFace(
 	expandedChunk const &cch,
 	std::vector<vertex> &vertices,
-	std::array<std::vector<u16>, textureCount> &isPerTexture
+	std::array<std::vector<u16>, blockTextureCount> &isPerTexture
 ) {
 	using a = AxisAccessor<s>;
 	std::array<u16, (chunkSize+1) * (chunkSize+1)> vertexCache;
@@ -248,7 +261,7 @@ INLINE void meshFace(
 INLINE void meshFoliage(
 	expandedChunk const &cch,
 	std::vector<vertex> &vertices,
-	std::array<std::vector<u16>, textureCount> &isPerTexture
+	std::array<std::vector<u16>, blockTextureCount> &isPerTexture
 ) {
 	for (int z = 0; z < chunkSize; ++z)
 		for (int y = 0; y < chunkSize; ++y)
@@ -284,7 +297,7 @@ INLINE void meshFoliage(
 
 MesherAllocation meshChunk(expandedChunk const &cch) {
 	std::vector<vertex> vertices;
-	std::array<std::vector<u16>, textureCount> isPerTexture;
+	std::array<std::vector<u16>, blockTextureCount> isPerTexture;
 
 	meshFace<0>(cch, vertices, isPerTexture);
 	meshFace<1>(cch, vertices, isPerTexture);
@@ -297,13 +310,13 @@ MesherAllocation meshChunk(expandedChunk const &cch) {
 	MesherAllocation result;
 	std::vector<u16> indicesFlat;
 
-	for (int i = 0; i < textureCount; ++i) {
+	for (int i = 0; i < blockTextureCount; ++i) {
 		auto &m = isPerTexture[i];
 		if (m.size()) {
 			MesherAllocation::Mesh mm;
 			mm.texture = i;
 			mm.count = m.size();
-			mm.flags = i == 8 ? 0b11 : 0; // todo better handling
+			mm.flags = i == 28 ? 0b11 : 0; // todo better handling
 			for (auto i: m)
 				indicesFlat.push_back(i);
 			result.meshes.push_back(mm);

@@ -6,20 +6,6 @@
 #include "world.hpp"
 #include "pixelfont.hpp"
 
-#include "coal_ore_pt3x.h"
-#include "cobblestone_pt3x.h"
-#include "cursor_pt3x.h"
-#include "dirt_pt3x.h"
-#include "grass_side_pt3x.h"
-#include "grass_top_pt3x.h"
-#include "planks_oak_pt3x.h"
-#include "sand_pt3x.h"
-#include "stone_pt3x.h"
-#include "tallgrass_pt3x.h"
-#include "log_oak_pt3x.h"
-#include "log_oak_top_pt3x.h"
-#include "leaves_oak_opaque_pt3x.h"
-
 #include "terrain_shbin.h"
 #include "focus_shbin.h"
 #include "sky_shbin.h"
@@ -119,16 +105,18 @@ C3D_FogLut fog;
 
 constexpr float farPlane = (renderDistance + 1) * chunkSize;
 
-std::array<C3D_Tex, textureCount> textures;
-// cursor, dirt, grass s, grass t, stone
+struct {
+	std::array<C3D_Tex, blockTextureCount> blocks;
+	C3D_Tex ui;
+	C3D_Tex font;
+} textures;
 
 PixelFont pfont;
-C3D_Tex fonttex;
 PixelText ptext;
 
 void topUI() {
 	C2D_Image image;
-	image.tex = &textures[0];
+	image.tex = &textures.ui;
 	Tex3DS_SubTexture sub { 16, 16, 0, 0, 1, 1 };
 	image.subtex = &sub;
 
@@ -144,21 +132,24 @@ void topUI() {
 }
 
 void bottomUI() {
-	const int blockCount = 10;
+	const int rowCount = 4;
 	const int size = 32;
 	Tex3DS_SubTexture sub { size, size, 0, 1, 1, 0 };
 	C2D_Image img;
 	img.subtex = &sub;
 	const int spacing = 40;
-	for (int i = 1; i < blockCount; ++i) {
-		int x = i % 4;
-		int y = i / 4;
-		img.tex = &textures[getBlockVisual(Block::solid(i-1)).faces[0] + 1]; // -Y
-		C2D_DrawImageAt(img,
-			160 - (4 * spacing / 2) + (spacing - size) / 2 + x * spacing,
-			120 - (3 * spacing / 2) + (spacing - size) / 2 + y * spacing,
-			1);
-	}
+	for (int y = 0; y < rowCount; ++y)
+		for (int x = 0; x < 8; ++x) {
+			int i = y * 8 + x;
+			auto vis = getBlockVisual(Block::solid(i)).faces;
+			if (vis[0] != 255) {
+				img.tex = &textures.blocks[vis[3]];
+				C2D_DrawImageAt(img,
+					160 - (6 * spacing / 2) + (spacing - size) / 2 + x * spacing,
+					120 - (3 * spacing / 2) + (spacing - size) / 2 + y * spacing,
+					1);	
+			}
+		}
 }
 
 // Helper function for loading a texture from memory
@@ -168,6 +159,39 @@ bool loadTextureFromMem(C3D_Tex* tex, C3D_TexCube* cube, const void* data, size_
 		return false;
 
 	// Delete the t3x object since we don't need it
+	Tex3DS_TextureFree(t3x);
+	return true;
+}
+
+bool loadTextureFromFS(
+	C3D_Tex* tex, C3D_TexCube* cube, 
+	const char* basepath, const char* filename, 
+	bool vram
+) {
+	std::array<char, 64> buf = { "romfs:/" };
+	char *ptr = buf.data() + 7;
+	int rem = 64 - 7;
+	int len;
+
+	len = strlcpy(ptr, basepath, rem);
+	rem -= len;
+	ptr += len;
+
+	len = strlcpy(ptr, filename, rem);
+	rem -= len;
+	ptr += len;
+
+	strlcpy(ptr, ".t3x", rem);
+
+	auto file = fopen(buf.data(), "r");
+	if (!file)
+		return false;
+	Tex3DS_Texture t3x = Tex3DS_TextureImportStdio(file, tex, cube, vram);
+	fclose(file);
+
+	if (!t3x)
+		return false;
+	
 	Tex3DS_TextureFree(t3x);
 	return true;
 }
@@ -300,28 +324,46 @@ void generateSky() {
 	BufInfo_Add(&skyBuffer, skyvbo, sizeof(skyVertex), 2, 0x10);
 }
 
-struct textureData_t {
-	u8 const *data;
-	size_t size;
-};
+// these need to be synced well with definitions for mesher... 
+// maybe they should be managed in a json?
+char const *textureNames[] = { // %s are ignored
 
-#define _t(x) { x ## _pt3x, x ## _pt3x_size } 
-textureData_t textureData[] = {
-	_t(cursor),
-	_t(dirt),
-	_t(grass_side),
-	_t(grass_top),
-	_t(stone),
-	_t(coal_ore),
-	_t(cobblestone),
-	_t(sand),
-	_t(planks_oak),
-	_t(tallgrass),
-	_t(log_oak),
-	_t(log_oak_top),
-	_t(leaves_oak_opaque),
+	// 0; generic blocks
+	"dirt", 
+	"grass_side",
+	"grass_top",
+	"stone",
+	"cobblestone",
+	"sand",
+	"gravel",
+	"%",
+
+	// 8; ores
+	"coal_ore", 
+	"iron_ore",
+	"%", "%", "%", "%", "%", "%", 
+
+	// 16; actives
+	"crafting_table_front",
+	"crafting_table_side",
+	"crafting_table_top",
+	"%",
+
+	"furnace_front_off",
+	"furnace_front_on",
+	"furnace_side",
+	"furnace_top",
+
+	// 24; nature
+	"log_oak",
+	"log_oak_top",
+	"leaves_oak_opaque",
+	"planks_oak",
+
+	// 28: temp low vegetaton 
+	"tallgrass",
+
 };
-#undef t
 
 void resourceInit() {
 
@@ -339,15 +381,28 @@ void resourceInit() {
 	AttrInfo_AddLoader(&vertexLayouts.sky, 0, GPU_FLOAT, 3); // v0=position
 	AttrInfo_AddLoader(&vertexLayouts.sky, 1, GPU_UNSIGNED_BYTE, 4); // v1=color
 
-	for (int i = 0; i < textureCount; ++i)
-		if (!loadTextureFromMem(&textures[i], nullptr, 
-			textureData[i].data, textureData[i].size))
-			exit(0);
-	
-	for (auto &t: textures) {
-		C3D_TexSetFilter(&t, GPU_NEAREST, GPU_LINEAR);
-		C3D_TexSetWrap(&t, GPU_REPEAT, GPU_REPEAT);
-	}
+	if (!loadTextureFromFS(
+			&textures.ui, nullptr, 
+			"blocks/", "cursor", true) // todo move out generic textures from /blocks
+	)
+		exit(0);
+
+	for (int i = 0; i < blockTextureCount; ++i)
+		if (textureNames[i][0] != '%') {
+			if (!loadTextureFromFS(
+				&textures.blocks[i], nullptr, 
+				"blocks/", textureNames[i], 
+				true
+			))
+				exit(0);
+		} else 
+			textures.blocks[i].data = nullptr;
+
+	for (auto &t: textures.blocks) 
+		if (t.width) {
+			C3D_TexSetFilter(&t, GPU_NEAREST, GPU_LINEAR);
+			C3D_TexSetWrap(&t, GPU_REPEAT, GPU_REPEAT);
+		}
 
 	// Configure the first fragment shading substage to blend the texture color with
 	// the vertex color (calculated by the vertex shader using a lighting algorithm)
@@ -392,11 +447,11 @@ void renderInit(bool bottomScreen) {
 	resourceInit();
 
 	auto file = fopen("romfs:/peanutmoney2.t3x", "r"); if (!file) while(1);
-	Tex3DS_Texture t3x = Tex3DS_TextureImportStdio(file, &fonttex, nullptr, false);
+	Tex3DS_Texture t3x = Tex3DS_TextureImportStdio(file, &textures.font, nullptr, false);
 	Tex3DS_TextureFree(t3x);
 	fclose(file);
 	file = fopen("romfs:/peanutmoney.fnt", "r");
-	pfont.init(fonttex, file);
+	pfont.init(textures.font, file);
 	fclose(file);
 }
 
@@ -578,7 +633,7 @@ void sceneRender(float iod) {
 						GPU_GREATER, 0x7f);
 				}
 				oldFlags = m.flags;
-				C3D_TexBind(0, &textures[m.texture + 1]); 
+				C3D_TexBind(0, &textures.blocks[m.texture]); 
 				// todo fix funk modes to count offsets
 				// if ((idx.x^idx.y^idx.z) & 1) continue; // funk mode
 				// if (idx.x&1 || idx.y & 1 || idx.z & 1) continue; // DISCO FEVER MODE
@@ -605,6 +660,8 @@ void sceneRender(float iod) {
 			GPU_SRC_ALPHA, GPU_ONE,
 			GPU_SRC_ALPHA, GPU_ONE
 		);
+		C3D_CullFace(GPU_CULL_BACK_CCW);
+		C3D_AlphaTest(false, GPU_GREATER, 0x7f);
 		C3D_BindProgram(&shaders.focus.program);
 
 		// Update the uniforms
@@ -711,8 +768,11 @@ void render(fvec3 &playerPos, float rx, float ry, vec3<s32> *focus, float depthS
 
 void renderExit() {
 
-	for (auto &t: textures)
-		C3D_TexDelete(&t);
+	for (auto &t: textures.blocks)
+		if (t.width)
+			C3D_TexDelete(&t);
+	C3D_TexDelete(&textures.font);
+	C3D_TexDelete(&textures.ui);
 
 	shaderProgramFree(&shaders.block.program);
 	DVLB_Free(shaders.block.dvlb);

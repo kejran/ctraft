@@ -122,19 +122,19 @@ export T3XHFILES		:=	$(patsubst %.t3s, $(BUILD)/%.h, $(GFXFILES))
 endif
 #---------------------------------------------------------------------------------
 
-export BLOCKT3XFILES	:=	$(BLOCKFILES:.png=.pt3x)
+export BLOCKT3XFILES	:=	$(patsubst %.png, $(ROMFS)/blocks/%.t3x, $(BLOCKFILES))
 
 export OFILES_SOURCES 	:=	$(CPPFILES:.cpp=.o) $(CFILES:.c=.o) $(SFILES:.s=.o)
 
 export OFILES_BIN	:=	$(addsuffix .o,$(BINFILES)) \
 			$(PICAFILES:.v.pica=.shbin.o) $(SHLISTFILES:.shlist=.shbin.o) \
-			$(addsuffix .o,$(T3XFILES)) $(addsuffix .o,$(BLOCKT3XFILES))
+			$(addsuffix .o,$(T3XFILES)) #$(addsuffix .o,$(BLOCKT3XFILES))
 
 export OFILES := $(OFILES_BIN) $(OFILES_SOURCES)
 
 export HFILES	:=	$(PICAFILES:.v.pica=_shbin.h) $(SHLISTFILES:.shlist=_shbin.h) \
 			$(addsuffix .h,$(subst .,_,$(BINFILES))) \
-			$(GFXFILES:.t3s=.h) $(BLOCKFILES:.png=_pt3x.h)
+			$(GFXFILES:.t3s=.h) #$(BLOCKFILES:.png=_pt3x.h)
 
 export INCLUDE	:=	$(foreach dir,$(INCLUDES),-I$(CURDIR)/$(dir)) \
 			$(foreach dir,$(LIBDIRS),-I$(dir)/include) \
@@ -168,7 +168,7 @@ endif
 .PHONY: all clean
 
 #---------------------------------------------------------------------------------
-all: $(BUILD) $(GFXBUILD) $(DEPSDIR) $(ROMFS_T3XFILES) $(T3XHFILES)
+all: $(BUILD) $(GFXBUILD) $(DEPSDIR) $(ROMFS_T3XFILES) $(T3XHFILES) $(BLOCKT3XFILES)
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
 $(BUILD):
@@ -196,6 +196,10 @@ $(GFXBUILD)/%.t3x	$(BUILD)/%.h	:	%.t3s
 	@tex3ds -i $< -H $(BUILD)/$*.h -d $(DEPSDIR)/$*.d -o $(GFXBUILD)/$*.t3x
 
 #---------------------------------------------------------------------------------
+
+$(ROMFS)/blocks/%.t3x :	gfx/blocks/%.png
+	@echo $(notdir $<)
+	@tex3ds $< -d $(DEPSDIR)/$*.d -o $(ROMFS)/blocks/$*.t3x
 else
 
 #---------------------------------------------------------------------------------
@@ -223,11 +227,11 @@ $(OUTPUT).elf	:	$(OFILES)
 	@echo $(notdir $<)
 	@$(bin2o)
 
-.PRECIOUS	:	%.pt3x
-%.pt3x.o	%_png.h :	%.pt3x
-#---------------------------------------------------------------------------------
-	@echo $(notdir $<)
-	@$(bin2o)
+# .PRECIOUS	:	%.pt3x
+# %.pt3x.o	%_png.h :	%.pt3x
+# #---------------------------------------------------------------------------------
+# 	@echo $(notdir $<)
+# 	@$(bin2o)
 
 #---------------------------------------------------------------------------------
 # rules for assembling GPU shaders
@@ -261,12 +265,12 @@ endef
 # 	@echo $(notdir $<)
 # 	@tex3ds -i $< -H $*.h -d $*.d -o $*.t3x
 
-%.pt3x	%.h	:	%.png
-#---------------------------------------------------------------------------------
-	@echo $(notdir $<)
-	@tex3ds $< -H $*.h -d $*.d -o $*.pt3x
+# %.pt3x	%.h	:	%.png
+# #---------------------------------------------------------------------------------
+# 	@echo $(notdir $<)
+# 	@tex3ds $< -H $*.h -d $*.d -o $*.pt3x
 
--include $(DEPSDIR)/*.d
+# -include $(DEPSDIR)/*.d
 
 #---------------------------------------------------------------------------------------
 endif
