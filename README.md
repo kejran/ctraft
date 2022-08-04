@@ -2,10 +2,20 @@
 
 ![preview](https://github.com/kejran/ctraft/blob/master/screenshot.png?raw=true)
 
-A simple proof-of-concept, barebones minecraft engine clone running on Nintendo 3DS. Written mostly as a practice while learning `libctru` & `citro3d`. 
+A simple proof-of-concept, barebones (and shameless) minecraft engine clone running on Nintendo 3DS. Written mostly as a practice while learning `libctru` & `citro3d`. 
+
+### Releases
+Latest `.3dsx` CI build can be downloaded [from this link.](https://github.com/kejran/ctraft/releases/latest/download/ctraft.3dsx)
+
+You can download it directly via FBI:
+
+![qr](https://user-images.githubusercontent.com/6992153/182961923-7c319f98-7c38-48c6-8501-1533be1df431.png)
+
+
+This code goes hard. Feel free to screenshot.
 
 ### How do you pronounce _ctraft_?
-You do not.
+I do not.
 
 ## Specifics
 `ctraft` uses simplex noise to generate a basic terrain split into 16³ chunks, which are separately triangulated into meshes. 
