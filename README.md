@@ -9,8 +9,7 @@ Latest `.3dsx` CI build can be downloaded [from this link.](https://github.com/k
 
 You can download it directly via FBI:
 
-![qr](https://user-images.githubusercontent.com/6992153/182961923-7c319f98-7c38-48c6-8501-1533be1df431.png)
-
+![qr](https://user-images.githubusercontent.com/6992153/183089434-2ce2cf27-631a-4ce8-9673-24a4a33deb4a.png)
 
 This code goes hard. Feel free to screenshot.
 
